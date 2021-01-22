@@ -6,7 +6,7 @@
       </span>
       <span class="item-wrapper flex flex-middle expand" @click.prevent="openTable" @dblclick.prevent="openTable">
         <i :title="title" :class="iconClass" class="item-icon material-icons">grid_on</i>
-        <span class="table-name truncate">{{table.name}}</span>
+        <span class="table-name truncate" :title="table.name">{{table.name}}</span>
       </span>
       <span class="actions" v-bind:class="{'pinned': pinned.includes(table)}">
         <span v-if="!pinned.includes(table)" @mousedown.prevent.stop="pin" class="btn-fab pin" :title="'Pin'"><i class="bk-pin"></i></span>
@@ -24,10 +24,14 @@
           <x-menuitem @click.prevent="toggleColumns">
             <x-label>Toggle columns</x-label>
           </x-menuitem>
+          <hr>
+          <x-menuitem @click.prevent="createTable" v-if="supportsDDL">
+            <x-label>SQL: Create {{table.entityType}}</x-label>
+          </x-menuitem>
         </x-menu>
       </x-contextmenu>
     </a>
-    <div v-show="showColumns" class="sub-items">
+    <div v-if="showColumns" class="sub-items">
       <span v-bind:key="c.columnName" v-for="(c, i) in table.columns" class="sub-item">
         <span class="title truncate" ref="title" @click="selectColumn(i)">{{c.columnName}}</span>
         <span class="badge" v-bind:class="c.dataType"><span>{{c.dataType}}</span></span>
@@ -81,6 +85,9 @@
       }
     },
     computed: {
+      supportsDDL() {
+        return ['table', 'view'].includes(this.table.entityType)
+      },
       iconClass() {
         const result = {}
         result[`${this.table.entityType}-icon`] = true
@@ -98,6 +105,9 @@
       ...mapState(['activeTab'])
     },
     methods: {
+      createTable() {
+        this.$root.$emit('loadTableCreate', this.table)
+      },
       copyTable() {
         this.$copyText(this.table.name)
       },

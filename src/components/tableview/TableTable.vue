@@ -4,8 +4,8 @@
       <form @submit.prevent="triggerFilter">
         <div v-if="filterMode === 'raw'" class="filter-group row gutter">
           <div class="btn-wrap">
-            <button class="btn btn-primary" type="button" @click.stop="filterMode = 'builder'">
-              <i class="material-icons">list</i>
+            <button class="btn btn-flat btn-fab" type="button" @click.stop="changeFilterMode('builder')" title="Toggle Filter Type">
+              <i class="material-icons">sort</i>
             </button>
           </div>
           <div class="expand filter">
@@ -13,13 +13,13 @@
               <input
                 class="form-control"
                 type="text"
-                v-model="filterRaw.value"
-                placeholder="Enter raw where condition"
+                v-model="filterRaw"
+                :placeholder=filterPlaceholder
               />
               <button
                 type="button"
                 class="clear btn-link"
-                @click.prevent="filterRaw.value = ''"
+                @click.prevent="filterRaw = ''"
               >
                 <i class="material-icons">cancel</i>
               </button>
@@ -31,7 +31,7 @@
         </div>
         <div v-else-if="filterMode === 'builder'" class="filter-group row gutter">
           <div class="btn-wrap">
-            <button class="btn btn-primary" type="button" @click.stop="filterMode = 'raw'">
+            <button class="btn btn-flat btn-fab" type="button" @click.stop="changeFilterMode('raw')" title="Toggle Filter Type">
               <i class="material-icons">code</i>
             </button>
           </div>
@@ -102,17 +102,17 @@
     <div ref="table"></div>
     <statusbar :mode="statusbarMode" class="tabulator-footer">
       <div class="col x4">
-        <span class="statusbar-item" v-if="lastUpdatedText && !editError" :title="`${totalRecordsText} Total Records`">
+        <span class="statusbar-item" v-if="lastUpdatedText && !queryError" :title="`${totalRecordsText} Total Records`">
           <i class="material-icons">list_alt</i>
           <span>{{ totalRecordsText }}</span>
         </span>
-        <span class="statusbar-item" v-if="lastUpdatedText && !editError" :title="'Updated' + ' ' + lastUpdatedText">
+        <span @click="refreshTable" @keypress.enter="refreshTable" tabindex="0" role="button" class="statusbar-item hoverable" v-if="lastUpdatedText && !queryError" :title="'Updated' + ' ' + lastUpdatedText">
           <i class="material-icons">update</i>
           <span>{{lastUpdatedText}}</span>
         </span>
-        <span v-if="editError" class="statusbar-item error" :title="editError">
+        <span v-if="queryError" class="statusbar-item error" :title="queryError.message">
           <i class="material-icons">error</i>
-          <span class="">Error Saving Changes</span>
+          <span class="">{{ queryError.title }}</span>
         </span>
       </div>
       <div class="col x4 flex flex-center">
@@ -123,19 +123,18 @@
         <div v-if="missingPrimaryKey" class="flex flex-right">
           <span class="statusbar-item">
             <i
-            class="material-icons"
-            v-tooltip="'No primary key detected, table editing is disabled.'"
+            class="material-icons text-danger"
+            v-tooltip="'Zero (or multiple) primary keys detected, table editing is disabled.'"
             >warning</i>
           </span>
         </div>
-        <div v-if="pendingEditList.length > 0" class="flex flex-right">
+        <div v-if="pendingChangesCount > 0" class="flex flex-right">
           <a @click.prevent="discardChanges" class="btn btn-link">Discard</a>
-          <a @click.prevent="saveChanges" class="btn btn-primary btn-icon" :title="pendingEditList.length + ' ' + 'pending edits'" :class="{'error': !!editError}">
-            <!-- <i v-if="editError" class="material-icons">error</i> -->
-            <span class="badge">{{pendingEditList.length}}</span>
+          <a @click.prevent="saveChanges" class="btn btn-primary btn-icon" :title="pendingChangesCount + ' ' + 'pending edits'" :class="{'error': !!queryError}">
+            <!-- <i v-if="queryError" class="material-icons">error</i> -->
+            <span class="badge">{{pendingChangesCount}}</span>
             <span>Commit</span>
           </a>
-
         </div>
       </div>
     </statusbar>
@@ -159,6 +158,11 @@ import Statusbar from '../common/StatusBar'
 import rawLog from 'electron-log'
 import _ from 'lodash'
 import TimeAgo from 'javascript-time-ago'
+
+//const CHANGE_TYPE_INSERT = 'insert'
+const CHANGE_TYPE_UPDATE = 'update'
+const CHANGE_TYPE_DELETE = 'delete'
+
 const log = rawLog.scope('TableTable')
 const FILTER_MODE_BUILDER = 'builder'
 const FILTER_MODE_RAW = 'raw'
@@ -183,10 +187,7 @@ export default {
         type: "=",
         field: this.table.columns[0].columnName
       },
-      filterRaw: {
-        value: '',
-        type: FILTER_MODE_RAW
-      },
+      filterRaw: null,
       filterMode: FILTER_MODE_BUILDER,
       headerFilter: true,
       columnsSet: false,
@@ -198,8 +199,12 @@ export default {
       limit: 100,
       rawTableKeys: [],
       primaryKey: null,
-      pendingEdits: {},
-      editError: null,
+      pendingChanges: {
+        inserts: [],
+        updates: [],
+        deletes: []
+      },
+      queryError: null,
       timeAgo: new TimeAgo('en-US'),
       lastUpdated: null,
       lastUpdatedText: null,
@@ -209,11 +214,25 @@ export default {
     };
   },
   computed: {
+    filterPlaceholder() {
+      return `Enter condition, eg: name like 'Matthew%'`
+    },
     totalRecordsText() {
       return `${this.totalRecords.toLocaleString()}`
     },
-    pendingEditList() {
-      return Object.values(this.pendingEdits)
+    pendingChangesCount() {
+      return this.pendingChanges.inserts.length 
+             + this.pendingChanges.updates.length 
+             + this.pendingChanges.deletes.length
+    },
+    hasPendingChanges() {
+      return this.pendingChangesCount > 0
+    },
+    hasPendingUpdates() {
+      return this.pendingChanges.updates.length > 0
+    },
+    hasPendingDeletes() {
+      return this.pendingChanges.deletes.length > 0
     },
     editable() {
       return this.primaryKey && this.table.entityType === 'table'
@@ -223,8 +242,8 @@ export default {
       return this.table.entityType === 'table' && !this.primaryKey
     },
     statusbarMode() {
-      if (this.editError) return 'failure'
-      if (this.pendingEdits.length > 0) return 'editing'
+      if (this.queryError) return 'failure'
+      if (this.pendingChangesCount) return 'editing'
       return null
     },
     tableKeys() {
@@ -276,7 +295,7 @@ export default {
           cellClick: this.cellClick,
           width: columnWidth,
           cssClass: isPK ? 'primary-key' : '',
-          editable: editable,
+          editable: this.cellEditCheck,
           editor: editable ? editorType : undefined,
           variableHeight: true,
           headerTooltip: headerTooltip,
@@ -322,6 +341,18 @@ export default {
     filterValue() {
       return this.filter.value;
     },
+    filterForTabulator() {
+      if (this.filterMode === FILTER_MODE_RAW && this.filterRaw) {
+        return this.filterRaw
+      } else if (
+        this.filterMode === FILTER_MODE_BUILDER &&
+        this.filter.type && this.filter.field && this.filter.value
+      ) {
+        return [this.filter]
+      } else {
+        return null
+      }
+    },
     initialSort() {
       if (this.table.columns.length === 0) {
         return [];
@@ -349,6 +380,11 @@ export default {
     filterValue() {
       if (this.filter.value === "") {
         this.clearFilter();
+      }
+    },
+    filterRaw() {
+      if (this.filterRaw === '') {
+        this.clearFilter()
       }
     },
     lastUpdated() {
@@ -391,6 +427,8 @@ export default {
     }
 
     this.showAllColumns()
+    this.resetPendingChanges()
+
     this.rawTableKeys = await this.connection.getTableKeys(this.table.name, this.table.schema)
     this.primaryKey = await this.connection.getPrimaryKey(this.table.name, this.table.schema)
     this.tabulator = new Tabulator(this.$refs.table, {
@@ -415,7 +453,15 @@ export default {
         scrollToStart: false,
         scrollPageUp: false,
         scrollPageDown: false
-      }
+      },
+      rowContextMenu:[
+        {
+          label: "Delete Row",
+          action: (e, row) => {
+            this.addRowToPendingDeletes(row)
+          }
+        },
+      ]
     });
 
   },
@@ -426,10 +472,10 @@ export default {
       return valueCell
     },
     slimDataType(dt) {
-      if (dt) {
-        return dt.split("(")[0]
-      }
-      return null
+      if (!dt) return null
+      if(dt === 'bit(1)') return dt
+
+return dt.split("(")[0]
     },
     editorType(dt) {
       switch (dt) {
@@ -477,11 +523,18 @@ export default {
         }, 10)
 
       }
+    },
+    cellEditCheck(cell) {
+      const primaryKey = cell.getRow().getCells().find(c => c.getField() === this.primaryKey).getValue()
+      const pendingDelete = _.find(this.pendingChanges.deletes, { primaryKey: primaryKey })
 
+      return this.editable && cell.getColumn.title !== this.primaryKey && !pendingDelete
     },
     cellEdited(cell) {
       log.info('edit', cell)
+
       const pkCell = cell.getRow().getCells().find(c => c.getField() === this.primaryKey)
+      const column = this.table.columns.find(c => c.columnName === cell.getField())
       if (!pkCell) {
         this.$noty.error("Can't edit column -- couldn't figure out primary key")
         // cell.setValue(cell.getOldValue())
@@ -496,78 +549,151 @@ export default {
 
       cell.getElement().classList.add('edited')
       const key = `${pkCell.getValue()}-${cell.getField()}`
-      const currentEdit = this.pendingEdits[key]
+      const currentEdit = _.find(this.pendingChanges.updates, { key: key })
       const payload = {
+        key: key,
         table: this.table.name,
         schema: this.table.schema,
         column: cell.getField(),
         pkColumn: this.primaryKey,
+        columnType: column ? column.dataType : undefined,
         primaryKey: pkCell.getValue(),
         oldValue: currentEdit ? currentEdit.oldValue : cell.getOldValue(),
         cell: cell,
         value: cell.getValue(0)
       }
-      this.$set(this.pendingEdits, key, payload)
+
+      this.addPendingChange(CHANGE_TYPE_UPDATE, payload)
     },
-    async saveChanges() {
-      try {
-        // throw new Error("This is an error")
-        const newData = await this.connection.updateValues(this.pendingEditList)
-        const updateIncludedPK = this.pendingEditList.find(e => e.column === e.pkColumn)
-        if (updateIncludedPK) {
-          this.tabulator.replaceData()
-        } else {
-          this.tabulator.updateData(newData)
-          this.pendingEditList.forEach(edit => {
-            edit.cell.getElement().classList.remove('edited')
-            edit.cell.getElement().classList.add('edit-success')
-            setTimeout(() => {
-              edit.cell.getElement().classList.remove('edit-success')
-            }, 1000)
-          })
-        }
-        log.info("new Data: ", newData)
-        this.pendingEdits = {}
-      } catch (ex) {
-        this.pendingEditList.forEach(edit => {
-          edit.cell.getElement().classList.add('edit-error')
-        })
-        this.editError = ex.message
+    addRowToPendingDeletes(row) {
+      row.getElement().classList.add('deleted')
+      const pkCell = row.getCells().find(c => c.getField() === this.primaryKey)
+
+      if (!pkCell) {
+        this.$noty.error("Can't delete row -- couldn't figure out primary key")       
+        return
       }
 
+      const payload = {
+        table: this.table.name,
+        row: row,
+        schema: this.table.schema,
+        pkColumn: this.primaryKey,
+        primaryKey: pkCell.getValue()
+      }
+
+      this.addPendingChange(CHANGE_TYPE_DELETE, payload)
     },
-    discardChanges() {
-      this.editError = null
-      const updates = []
-      this.pendingEditList.forEach(edit => {
-        const update = {}
-        update[edit.pkColumn] = edit.primaryKey
-        update[edit.column] = edit.oldValue
-        updates.push(update)
-        // this.tabulator.updateData(update)
-        // edit.cell.restoreOldValue()
-        edit.cell.getElement().classList.remove('edited')
-        edit.cell.getElement().classList.remove('edit-error')
-      })
-      log.debug('discarding -- applying update', updates)
-      this.tabulator.updateData(updates)
-      this.pendingEdits = {}
-    },
-    triggerFilter() {
-      if (this.filter.type && this.filter.field) {
-        if (this.filter.value) {
-          this.tabulator.setFilter(
-            this.filter.field,
-            this.filter.type,
-            this.filter.value
-          );
-        } else {
-          this.tabulator.clearFilter();
+    addPendingChange(changeType, payload) {
+      if (changeType === CHANGE_TYPE_UPDATE) {
+        // remove existing pending updates with identical pKey-column combo
+        let pendingUpdates = _.reject(this.pendingChanges.updates, { 'key': payload.key })
+        pendingUpdates.push(payload)
+
+        this.$set(this.pendingChanges, 'updates', pendingUpdates)
+      } else if (changeType === CHANGE_TYPE_DELETE) {
+        // remove pending updates for the row marked for deletion
+        const filter = { 'primaryKey': payload.primaryKey }
+        const discardedUpdates = _.filter(this.pendingChanges.updates, filter)
+        const pendingUpdates = _.reject(this.pendingChanges.updates, filter)
+
+        discardedUpdates.forEach(update => this.discardColumnUpdate(update))
+
+        this.$set(this.pendingChanges, 'updates', pendingUpdates)
+
+        if (!_.find(this.pendingChanges.deletes, { 'primaryKey': payload.primaryKey })) {
+          this.pendingChanges.deletes.push(payload)
         }
       }
     },
+    resetPendingChanges() {
+      this.pendingChanges = {
+        inserts: [],
+        updates: [],
+        deletes: []
+      }
+    },
+    async saveChanges() {
+
+        let replaceData = false
+
+        try {
+          const result = await this.connection.applyChanges(this.pendingChanges)
+          const updateIncludedPK = this.pendingChanges.updates.find(e => e.column === e.pkColumn)
+
+          if (updateIncludedPK || this.hasPendingDeletes) {
+            replaceData = true
+          } else if (this.hasPendingUpdates) {
+            this.tabulator.updateData(result)
+            this.pendingChanges.updates.forEach(edit => {
+              edit.cell.getElement().classList.remove('edited')
+              edit.cell.getElement().classList.add('edit-success')
+              setTimeout(() => {
+                if (edit.cell.getElement()) {
+                  edit.cell.getElement().classList.remove('edit-success')
+                }
+              }, 1000)
+            })
+          }
+
+          this.resetPendingChanges()
+
+          if (replaceData) {
+            this.tabulator.replaceData()
+          }
+
+        } catch (ex) {
+          
+          this.pendingChanges.updates.forEach(edit => {
+              edit.cell.getElement().classList.add('edit-error')
+          })
+          
+          this.setQueryError('Error saving changes', ex.message)
+          this.$noty.error("Error saving changes")
+          
+          return
+        }
+    },
+    discardChanges() {
+      this.queryError = null
+
+      this.pendingChanges.updates.forEach(edit => {
+        this.discardColumnUpdate(edit)
+      })
+
+      this.pendingChanges.deletes.forEach(pendingDelete => {
+        pendingDelete.row.getElement().classList.remove('deleted')
+      })
+
+      this.resetPendingChanges()
+    },
+    discardColumnUpdate(pendingUpdate) {
+      const update = {}
+      update[pendingUpdate.pkColumn] = pendingUpdate.primaryKey
+      update[pendingUpdate.column] = pendingUpdate.oldValue
+      pendingUpdate.cell.getElement().classList.remove('edited')
+      pendingUpdate.cell.getElement().classList.remove('edit-error')
+
+      this.tabulator.updateData([update])
+    },
+    triggerFilter() {
+      this.tabulator.setData()
+    },
     clearFilter() {
-      this.tabulator.clearFilter();
+      this.tabulator.setData();
+    },
+    changeFilterMode(filterMode) {
+      // Populate raw filter query with existing filter if raw filter is empty
+      if (
+        filterMode === FILTER_MODE_RAW &&
+        !_.isNil(this.filter.value) &&
+        _.isEmpty(this.filterRaw)
+      ) {
+        const rawFilter = _.join([this.filter.field, this.filter.type, this.filter.value], ' ')
+        this.filterRaw = rawFilter
+      }
+
+      this.filterMode = filterMode
     },
     dataFetch(url, config, params) {
       // this conforms to the Tabulator API
@@ -576,7 +702,7 @@ export default {
       let offset = 0;
       let limit = this.limit;
       let orderBy = null;
-      let filters = null;
+      let filters = this.filterForTabulator;
 
       if (params.sorters) {
         orderBy = params.sorters
@@ -589,12 +715,7 @@ export default {
       if (params.page) {
         offset = (params.page - 1) * limit;
       }
-
-      if (this.filterMode === FILTER_MODE_RAW && this.filterRaw.value) {
-        filters = [this.filterRaw]
-      } else if (this.filterMode === FILTER_MODE_BUILDER && params.filters) {
-        filters = params.filters;
-      }
+      log.info("filters", filters)
 
       const result = new Promise((resolve, reject) => {
         (async () => {
@@ -610,8 +731,8 @@ export default {
             const r = response.result;
             this.totalRecords = Number(response.totalRecords) || 0;
             this.response = response
-            this.pendingEdits = []
-            this.editError = null
+            this.resetPendingChanges()
+            this.clearQueryError()
             const data = this.dataToTableData({ rows: r }, this.tableColumns);
             this.data = data
             this.lastUpdated = Date.now()
@@ -621,7 +742,10 @@ export default {
             });
           } catch (error) {
             reject();
-            throw error;
+            this.setQueryError('Error loading data', error.message)
+            this.$nextTick(() => {
+              this.tabulator.clearData()
+            })
           }
         })();
       });
@@ -636,7 +760,21 @@ export default {
     },
     hideAllColumns() {
       this.visibleColumns = []
-    }
+    },
+    setQueryError(title, message) {
+      this.queryError = {
+        title: title,
+        message: message
+      }
+    },
+    clearQueryError() {
+      this.queryError = null
+    },
+    refreshTable() {
+      const page = this.tabulator.getPage()
+      this.tabulator.replaceData()
+      this.tabulator.setPage(page)
+    },
   }
 };
 </script>

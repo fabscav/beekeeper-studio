@@ -3,15 +3,18 @@
 import _ from 'lodash'
 import sqlite3 from 'sqlite3';
 import { identify } from 'sql-query-identifier';
+import knexlib from 'knex'
 import rawLog from 'electron-log'
-import { genericSelectTop } from './utils';
+import { buildDeleteQueries, genericSelectTop } from './utils';
 
 const log = rawLog.scope('sqlite')
 const logger = () => log
 
+const knex = knexlib({ client: 'sqlite3'})
+
 const sqliteErrors = {
   CANCELED: 'SQLITE_INTERRUPT',
-};
+}; 
 
 
 export default async function (server, database) {
@@ -24,6 +27,7 @@ export default async function (server, database) {
   await driverExecuteQuery(conn, { query: 'SELECT sqlite_version()' });
 
   return {
+    supportedFeatures: () => ({ customRoutines: false }),
     wrapIdentifier,
     disconnect: () => disconnect(conn),
     listTables: () => listTables(conn),
@@ -38,7 +42,7 @@ export default async function (server, database) {
     getPrimaryKey: (db, table) => getPrimaryKey(conn, db, table),
     getTableKeys: (db, table) => getTableKeys(conn, db, table),
     query: (queryText) => query(conn, queryText),
-    updateValues: (updates) => updateValues(conn, updates),
+    applyChanges: (changes) => applyChanges(conn, changes),
     executeQuery: (queryText) => executeQuery(conn, queryText),
     listDatabases: () => listDatabases(conn),
     selectTop: (table, offset, limit, orderBy, filters) => selectTop(conn, table, offset, limit, orderBy, filters),
@@ -65,6 +69,10 @@ export function wrapIdentifier(value) {
   const matched = value.match(/(.*?)(\[[0-9]\])/); // eslint-disable-line no-useless-escape
   if (matched) return wrapIdentifier(matched[1]) + matched[2];
   return `"${value.replace(/"/g, '""')}"`;
+}
+
+function escapeString(value) {
+  return value.replace("'", "''")
 }
 
 
@@ -109,49 +117,72 @@ export function query(conn, queryText) {
   };
 }
 
-export async function updateValues(conn, updates) {
-  const updateCommands = updates.map(update => {
+export async function applyChanges(conn, changes) {
+  let results = []
+
+  await runWithConnection(conn, async (connection) => {
+    const cli = { connection }
+    await driverExecuteQuery(cli, { query: 'BEGIN'})
+
+    try {
+      if (changes.updates) {
+        results = await updateValues(cli, changes.updates)
+      }
+  
+      if (changes.deletes) {
+        await deleteRows(cli, changes.deletes)
+      }
+  
+      await driverExecuteQuery(cli, { query: 'COMMIT'})
+    } catch (ex) {
+      log.error("query exception: ", ex)
+      await driverExecuteQuery(cli, { query: 'ROLLBACK' })
+      throw ex
+    }
+  })
+
+  return results
+}
+
+export async function updateValues(cli, updates) {
+  const commands = updates.map(update => {
     return {
       query: `UPDATE ${update.table} SET ${update.column} = ? WHERE ${update.pkColumn} = ?`,
       params: [update.value, update.primaryKey]
     }
   })
 
-  const commands = [{ query: 'BEGIN'}, ...updateCommands];
   const results = []
   // TODO: this should probably return the updated values
-  await runWithConnection(conn, async (connection) => {
-    const cli = { connection }
-    try {
-      for (let index = 0; index < commands.length; index++) {
-        const blob = commands[index];
-        await driverExecuteQuery(cli, blob)
-      }
+  for (let index = 0; index < commands.length; index++) {
+    const blob = commands[index];
+    await driverExecuteQuery(cli, blob)
+  }
 
-      const returnQueries = updates.map(update => {
-        return {
-          query: `select * from "${update.table}" where "${update.pkColumn}" = ?`,
-          params: [
-            update.primaryKey
-          ]
-        }
-      })
-
-      for (let index = 0; index < returnQueries.length; index++) {
-        const blob = returnQueries[index];
-        const r = await driverExecuteQuery(cli, blob)
-        if (r.data[0]) results.push(r.data[0])
-      }
-      await driverExecuteQuery(cli, { query: 'COMMIT'})
-    } catch (ex) {
-      log.error("query exception: ", ex)
-      await driverExecuteQuery(cli, { query: 'ROLLBACK' });
-      throw ex
+  const returnQueries = updates.map(update => {
+    return {
+      query: `select * from "${update.table}" where "${update.pkColumn}" = ?`,
+      params: [
+        update.primaryKey
+      ]
     }
   })
+
+  for (let index = 0; index < returnQueries.length; index++) {
+    const blob = returnQueries[index];
+    const r = await driverExecuteQuery(cli, blob)
+    if (r.data[0]) results.push(r.data[0])
+  }
+
   return results
 }
 
+export async function deleteRows(cli, deletes) {
+
+  buildDeleteQueries(knex, deletes).forEach(async command => await driverExecuteQuery(cli, { query: command }))
+
+  return true
+}
 
 export async function executeQuery(conn, queryText) {
   const result = await driverExecuteQuery(conn, { query: queryText, multiple: true });
@@ -261,16 +292,16 @@ export function getTableReferences() {
 }
 
 export async function getPrimaryKey(conn, database, table) {
-  log.debug('finding foreign key for', database, table)
-  const sql = `pragma table_info('${table}')`
-  const { data } = await driverExecuteQuery(conn, { query: sql })
-  const found = data.find(r => r.pk === 1)
-  return found ? found.name : null
+  log.debug('finding primary key for', database, table)
+  const sql = `pragma table_info('${escapeString(table)}')`
+  const { data } = await driverExecuteQuery(conn, { query: sql})
+  const found = data.filter(r => r.pk > 0)
+  if (found.length !== 1) return null
+  return found[0].name
 }
 
 export async function getTableKeys(conn, database, table) {
-  console.log("table keys")
-  const sql = `pragma foreign_key_list('${table}')`
+  const sql = `pragma foreign_key_list('${escapeString(table)}')`
   log.debug("running SQL", sql)
   const { data } = await driverExecuteQuery(conn, { query: sql });
   log.debug("response", data)
@@ -354,7 +385,7 @@ function parseRowQueryResult({ data, statement, changes }) {
 
 function identifyCommands(queryText) {
   try {
-    return identify(queryText, { strict: false });
+    return identify(queryText, { strict: false, dialect: 'sqlite' });
   } catch (err) {
     return [];
   }
