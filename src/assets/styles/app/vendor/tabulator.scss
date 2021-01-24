@@ -95,7 +95,10 @@ $foreign-key-width:      24px;
   &.tabulator-selected {
     background: rgba($theme-base, 0.1);
   }
-  &.deleted {
+  &.inserted, &.inserted:hover {
+    background: rgba($brand-success, 0.8);
+  }
+  &.deleted, &.deleted:hover {
     background: rgba($brand-danger, 0.8);
   }
 }
@@ -312,7 +315,7 @@ $foreign-key-width:      24px;
 }
 
 .tabulator-menu {
-  background: lighten($theme-bg, 5%);
+  background: $theme-bg;
   border: none;
   border-radius: 6px;
   min-width: 150px;
@@ -326,5 +329,14 @@ $foreign-key-width:      24px;
     font-size: 0.9rem;
     color: $text-dark;
     cursor: pointer;
+
+    .item-icon {
+      padding-right: 6px;
+      vertical-align: top;
+    }
+  }
+
+  .tabulator-menu-separator {
+    border-top-color: rgba($theme-base, 0.07);
   }
 }

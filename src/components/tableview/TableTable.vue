@@ -159,7 +159,7 @@ import rawLog from 'electron-log'
 import _ from 'lodash'
 import TimeAgo from 'javascript-time-ago'
 
-//const CHANGE_TYPE_INSERT = 'insert'
+const CHANGE_TYPE_INSERT = 'insert'
 const CHANGE_TYPE_UPDATE = 'update'
 const CHANGE_TYPE_DELETE = 'delete'
 
@@ -228,6 +228,9 @@ export default {
     hasPendingChanges() {
       return this.pendingChangesCount > 0
     },
+    hasPendingInserts() {
+      return this.pendingChanges.inserts.length > 0
+    },
     hasPendingUpdates() {
       return this.pendingChanges.updates.length > 0
     },
@@ -266,7 +269,6 @@ export default {
         // this needs fixing
         // currently it doesn't fetch the right result if you update the PK
         // because it uses the PK to fetch the result.
-        const editable = this.editable && column.columnName !== this.primaryKey
         const slimDataType = this.slimDataType(column.dataType)
         const editorType = this.editorType(column.dataType)
         const useVerticalNavigation = editorType === 'textarea'
@@ -296,7 +298,7 @@ export default {
           width: columnWidth,
           cssClass: isPK ? 'primary-key' : '',
           editable: this.cellEditCheck,
-          editor: editable ? editorType : undefined,
+          editor: editorType,
           variableHeight: true,
           headerTooltip: headerTooltip,
           cellEditCancelled: cell => cell.getRow().normalizeHeight(),
@@ -454,9 +456,41 @@ export default {
         scrollPageUp: false,
         scrollPageDown: false
       },
+      tableContextMenu: [
+        {
+          label: '<i class="item-icon material-icons">add_circle_outline</i> Add row',
+          action: () => {
+            this.tabulator.addRow({}, false).then(row => { 
+              this.addRowToPendingInserts(row)
+              this.tabulator.scrollToRow(row, 'bottom', false)
+            })
+          }
+        }
+      ],
       rowContextMenu:[
         {
-          label: "Delete Row",
+          label: '<i class="item-icon material-icons">add_circle_outline</i> Add row',
+          action: () => {
+            this.tabulator.addRow({}, false).then(row => { 
+              this.addRowToPendingInserts(row)
+              this.tabulator.scrollToRow(row, 'bottom', false)
+            })
+          }
+        },
+        {
+          label: '<i class="item-icon material-icons">content_copy</i> Clone row',
+          action: (e, row) => {
+            this.tabulator.addRow(row.getData(), false).then(row => {
+              this.addRowToPendingInserts(row)
+              this.tabulator.scrollToRow(row, 'bottom', false)
+            })
+          }
+        },
+        {
+          separator:true,
+        },
+        {
+          label: '<i class="item-icon material-icons">delete_outline</i> Delete row',
           action: (e, row) => {
             this.addRowToPendingDeletes(row)
           }
@@ -525,13 +559,24 @@ return dt.split("(")[0]
       }
     },
     cellEditCheck(cell) {
+      const pendingInsert = _.find(this.pendingChanges.inserts, { row: cell.getRow() })
+
+      if (pendingInsert) {
+        return true
+      }
+
       const primaryKey = cell.getRow().getCells().find(c => c.getField() === this.primaryKey).getValue()
       const pendingDelete = _.find(this.pendingChanges.deletes, { primaryKey: primaryKey })
 
-      return this.editable && cell.getColumn.title !== this.primaryKey && !pendingDelete
+      return this.editable && cell.getColumn().getField() !== this.primaryKey && !pendingDelete
     },
     cellEdited(cell) {
       log.info('edit', cell)
+
+      // Dont handle cell edit if made on a pending insert
+      if (_.find(this.pendingChanges.inserts, { row: cell.getRow() })) {
+        return
+      }
 
       const pkCell = cell.getRow().getCells().find(c => c.getField() === this.primaryKey)
       const column = this.table.columns.find(c => c.columnName === cell.getField())
@@ -565,14 +610,33 @@ return dt.split("(")[0]
 
       this.addPendingChange(CHANGE_TYPE_UPDATE, payload)
     },
+    addRowToPendingInserts(row) {
+      row.getElement().classList.add('inserted')
+
+      const payload = {
+        table: this.table.name,
+        row: row,
+        schema: this.table.schema,
+        pkColumn: this.primaryKey
+      }
+
+      this.addPendingChange(CHANGE_TYPE_INSERT, payload)
+    },
     addRowToPendingDeletes(row) {
-      row.getElement().classList.add('deleted')
       const pkCell = row.getCells().find(c => c.getField() === this.primaryKey)
 
       if (!pkCell) {
         this.$noty.error("Can't delete row -- couldn't figure out primary key")       
         return
       }
+
+      if (this.hasPendingInserts && _.find(this.pendingChanges.inserts, { row: row })) {
+        this.$set(this.pendingChanges, 'inserts', _.reject(this.pendingChanges.inserts, { row: row }))
+        this.tabulator.deleteRow(row)
+        return
+      }
+
+      row.getElement().classList.add('deleted')
 
       const payload = {
         table: this.table.name,
@@ -585,6 +649,10 @@ return dt.split("(")[0]
       this.addPendingChange(CHANGE_TYPE_DELETE, payload)
     },
     addPendingChange(changeType, payload) {
+      if (changeType === CHANGE_TYPE_INSERT) {
+        this.pendingChanges.inserts.push(payload)
+      }
+
       if (changeType === CHANGE_TYPE_UPDATE) {
         // remove existing pending updates with identical pKey-column combo
         let pendingUpdates = _.reject(this.pendingChanges.updates, { 'key': payload.key })
@@ -621,7 +689,7 @@ return dt.split("(")[0]
           const result = await this.connection.applyChanges(this.pendingChanges)
           const updateIncludedPK = this.pendingChanges.updates.find(e => e.column === e.pkColumn)
 
-          if (updateIncludedPK || this.hasPendingDeletes) {
+          if (updateIncludedPK || this.hasPendingInserts || this.hasPendingDeletes) {
             replaceData = true
           } else if (this.hasPendingUpdates) {
             this.tabulator.updateData(result)
@@ -657,9 +725,9 @@ return dt.split("(")[0]
     discardChanges() {
       this.queryError = null
 
-      this.pendingChanges.updates.forEach(edit => {
-        this.discardColumnUpdate(edit)
-      })
+      this.pendingChanges.inserts.forEach(insert => this.tabulator.deleteRow(insert.row))
+
+      this.pendingChanges.updates.forEach(edit => this.discardColumnUpdate(edit))
 
       this.pendingChanges.deletes.forEach(pendingDelete => {
         pendingDelete.row.getElement().classList.remove('deleted')
