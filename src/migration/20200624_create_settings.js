@@ -23,6 +23,7 @@ export default {
     `INSERT INTO user_setting(key, defaultValue, linuxDefault, windowsDefault) VALUES
     ('theme', 'dark', 'dark', null),
     ('menuStyle', 'native', null, 'client')
+    ('multiTabTable', 1, null, 'client')
     `,
     `
       CREATE TRIGGER prevent_settings_deletion
