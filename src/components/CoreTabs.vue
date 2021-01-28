@@ -63,7 +63,10 @@
     },
     computed: {
       ...mapState(["activeTab"]),
-      ...mapGetters({ 'menuStyle': 'settings/menuStyle' }),
+      ...mapGetters({ 
+        'menuStyle': 'settings/menuStyle',
+        'multiTabTable': 'settings/multiTabTable' 
+      }),
       lastTab() {
         return this.tabItems[this.tabItems.length - 1];
       },
@@ -163,6 +166,15 @@
 
         let resolvedTable = null
 
+        if (!this.multiTabTable) {
+          const existingTab = _.findIndex(this.tabItems, o => o.type === "table" && o.table.name === table.name)
+          
+          if (existingTab > -1) {
+            this.setActiveTab(this.tabItems[existingTab])
+            return
+          }
+        }
+        
         if (!table && tableName) {
           resolvedTable = this.$store.state.tables.find(t => t.name === tableName)
         }

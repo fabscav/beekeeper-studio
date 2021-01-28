@@ -57,7 +57,7 @@
         return this.result.fields.map((column) => {
           const result = {
             title: column.name,
-            field: column.name,
+            field: column.id,
             dataType: column.dataType,
             width: columnWidth,
             mutatorData: this.resolveDataMutator(column.dataType),
@@ -84,7 +84,7 @@
       this.tabulator = new Tabulator(this.$refs.tabulator, {
         data: this.tableData, //link data to table
         reactiveData: true,
-        virtualDomHoz: true,
+        virtualDomHoz: false,
         columns: this.tableColumns, //define table columns
         height: this.actualTableHeight,
         nestedFieldSeparator: false,

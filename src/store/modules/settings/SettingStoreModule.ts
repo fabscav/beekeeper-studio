@@ -54,6 +54,10 @@ const SettingStoreModule: Module<State, any> = {
     menuStyle(state) {
       if (!state.settings.menuStyle) return 'native'
       return state.settings.menuStyle.value
+    },
+    multiTabTable(state) {
+      if (!state.settings.multiTabTable) return true
+      return state.settings.multiTabTable.value
     }
   }
 }
