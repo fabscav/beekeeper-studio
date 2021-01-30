@@ -130,7 +130,7 @@
         </div>
         <div v-if="pendingChangesCount > 0" class="flex flex-right">
           <a @click.prevent="discardChanges" class="btn btn-link">Discard</a>
-          <a @click.prevent="saveChanges" class="btn btn-primary btn-icon" :title="pendingChangesCount + ' ' + 'pending edits'" :class="{'error': !!queryError}">
+          <a @click.prevent="saveChanges(false)" class="btn btn-primary btn-icon" :title="pendingChangesCount + ' ' + 'pending edits'" :class="{'error': !!queryError}">
             <!-- <i v-if="queryError" class="material-icons">error</i> -->
             <span class="badge">{{pendingChangesCount}}</span>
             <span>Commit</span>
@@ -138,6 +138,20 @@
         </div>
       </div>
     </statusbar>
+
+    <!-- Confirm Write Modal -->
+    <modal class="vue-dialog beekeeper-modal" name="confirm-write-modal" height="auto" :scrollable="true">
+      <form @submit.prevent="saveChanges(true)">      
+        <div class="dialog-content">
+          <div class="dialog-c-title">Confirm Changes</div>
+          <div class="dialog-c-subtitle">The changes you're about to commit will alter the table data.</div>
+        </div>
+        <div class="vue-dialog-buttons">
+          <button class="btn btn-flat" type="button" @click.prevent="$modal.hide('confirm-write-modal')">Cancel</button>
+          <button class="btn btn-danger" type="submit">Commit</button>
+        </div>
+      </form>
+    </modal>
   </div>
 </template>
 
@@ -364,6 +378,12 @@ export default {
     },
     allColumnsSelected() {
       return this.visibleColumns.length === this.table.columns.length
+    },
+    writeMode() {
+      return this.connection ? this.connection.server.config.writeMode : null
+    },
+    writeModeReadonly() {
+      return this.writeMode === 'readonly'
     }
   },
 
@@ -456,20 +476,10 @@ export default {
         scrollPageUp: false,
         scrollPageDown: false
       },
-      tableContextMenu: [
-        {
-          label: '<i class="item-icon material-icons">add_circle_outline</i> Add row',
-          action: () => {
-            this.tabulator.addRow({}, false).then(row => { 
-              this.addRowToPendingInserts(row)
-              this.tabulator.scrollToRow(row, 'bottom', false)
-            })
-          }
-        }
-      ],
       rowContextMenu:[
         {
-          label: '<i class="item-icon material-icons">add_circle_outline</i> Add row',
+          disabled: this.writeModeReadonly,
+          label: '<x-menuitem><x-label><i class="material-icons">add_circle_outline</i> Add row</x-label></x-menuitem>',
           action: () => {
             this.tabulator.addRow({}, false).then(row => { 
               this.addRowToPendingInserts(row)
@@ -478,9 +488,16 @@ export default {
           }
         },
         {
-          label: '<i class="item-icon material-icons">content_copy</i> Clone row',
+          disabled: this.writeModeReadonly,
+          label: '<x-menuitem><x-label><i class="material-icons">content_copy</i> Clone row</x-label></x-menuitem>',
           action: (e, row) => {
-            this.tabulator.addRow(row.getData(), false).then(row => {
+            let data = { ...row.getData() }
+
+            if (this.primaryKey) {
+              data[this.primaryKey] = undefined
+            }
+
+            this.tabulator.addRow(data, false).then(row => {
               this.addRowToPendingInserts(row)
               this.tabulator.scrollToRow(row, 'bottom', false)
             })
@@ -490,7 +507,8 @@ export default {
           separator:true,
         },
         {
-          label: '<i class="item-icon material-icons">delete_outline</i> Delete row',
+          disabled: this.writeModeReadonly,
+          label: '<x-menuitem><x-label><i class="material-icons">delete_outline</i> Delete row</x-label></x-menuitem>',
           action: (e, row) => {
             this.addRowToPendingDeletes(row)
           }
@@ -549,7 +567,7 @@ return dt.split("(")[0]
     },
     cellClick(e, cell) {
       // this makes it easier to select text if not editing
-      if (!this.editable) {
+      if (this.writeModeReadonly || !this.editable) {
         this.selectChildren(cell.getElement())
       } else {
         setTimeout(() => {
@@ -568,7 +586,7 @@ return dt.split("(")[0]
       const primaryKey = cell.getRow().getCells().find(c => c.getField() === this.primaryKey).getValue()
       const pendingDelete = _.find(this.pendingChanges.deletes, { primaryKey: primaryKey })
 
-      return this.editable && cell.getColumn().getField() !== this.primaryKey && !pendingDelete
+      return !this.writeModeReadonly && this.editable && cell.getColumn().getField() !== this.primaryKey && !pendingDelete
     },
     cellEdited(cell) {
       log.info('edit', cell)
@@ -681,7 +699,14 @@ return dt.split("(")[0]
         deletes: []
       }
     },
-    async saveChanges() {
+    async saveChanges(skipWarnings) {
+
+        if (this.writeMode === 'confirm' && !skipWarnings) {
+            this.$modal.show('confirm-write-modal')
+            return 
+        }
+
+        this.$modal.hide('confirm-write-modal')
 
         let replaceData = false
 
