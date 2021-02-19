@@ -31,6 +31,7 @@
         <TableTable @setTabTitleScope="setTabTitleScope" v-if="tab.type === 'table'" :active="activeTab === tab" :tabId="tab.id" :connection="tab.connection" :initialFilter="tab.initialFilter" :table="tab.table"></TableTable>
       </div>
     </div>
+    <ExportModal v-if="showExportModal" :connection="this.connection" :table="tableExportOptions.table" :filters="tableExportOptions.filters" @close="showExportModal = false"></ExportModal>
   </div>
 </template>
 
@@ -41,6 +42,7 @@
   import {FavoriteQuery} from '../common/appdb/models/favorite_query'
   import QueryEditor from './TabQueryEditor'
   import CoreTabHeader from './CoreTabHeader'
+  import ExportModal from './ExportModal'
   import { uuidv4 } from '@/lib/uuid'
   import TableTable from './tableview/TableTable'
   import AppEvent from '../common/AppEvent'
@@ -50,12 +52,14 @@
 
   export default {
     props: [ 'connection' ],
-    components: { QueryEditor, CoreTabHeader, TableTable, Draggable },
+    components: { QueryEditor, CoreTabHeader, TableTable, Draggable, ExportModal },
     data() {
       return {
         tabItems: [],
         activeItem: 0,
-        newTabId: 1
+        newTabId: 1,
+        showExportModal: false,
+        tableExportOptions: null
       }
     },
     watch: {
@@ -188,6 +192,14 @@
         }
         this.addTab(t)
       },
+      exportTable(options) {
+        this.tableExportOptions = options
+        this.showExportModal = true
+      },
+      hideExportTable() {
+        this.tableExportOptions = null
+        this.showExportModal = false
+      },
       openSettings(settings) {
         const t = {
           title: "Settings",
@@ -259,6 +271,8 @@
       this.$root.$on('loadTable', this.openTable)
       this.$root.$on('loadSettings', this.openSettings)
       this.$root.$on('loadTableCreate', this.loadTableCreate)
+      this.$root.$on('exportTable', this.exportTable)
+      this.$root.$on('hideExportTable', this.hideExportTable)
       this.$root.$on('loadRoutineCreate', this.loadRoutineCreate)
       this.$root.$on('favoriteClick', (item) => {
         const queriesOnly = this.tabItems.map((item) => {
