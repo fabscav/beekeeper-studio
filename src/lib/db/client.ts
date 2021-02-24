@@ -24,6 +24,9 @@ export interface TableColumn {
 
 export interface FilterOptions {
   schema: Nullable<string>
+  only?: string[]
+  ignore?: string[]
+  tables?: string[]
 }
 
 export interface DatabaseFilterOptions {
@@ -61,7 +64,8 @@ export interface IDbInsert {
 
 export interface TableResult {
   result: any[],
-  totalRecords: Number
+  fields: string[],
+  totalRecords: number
 }
 
 export interface TableChanges {
@@ -348,8 +352,17 @@ function supportedFeatures(server: IDbConnectionServer, database: IDbConnectionD
   return database.connection?.supportedFeatures()
 }
 
-function selectTop(server: IDbConnectionServer, database: IDbConnectionDatabase, table: string, offset: number, limit: number, orderBy: OrderBy[], filters: TableFilter[], schema: string) {
+function selectTop(
+  server: IDbConnectionServer,
+  database: IDbConnectionDatabase,
+  table: string,
+  offset: number,
+  limit: number,
+  orderBy: OrderBy[],
+  filters: TableFilter[],
+  schema: string): Promise<TableResult> {
   checkIsConnected(server, database)
+  if (!database.connection) throw "No database connection available, please reconnect"
   return database.connection?.selectTop(table, offset, limit, orderBy, filters, schema);
 }
 
@@ -378,17 +391,25 @@ function listRoutines(server: IDbConnectionServer, database: IDbConnectionDataba
   return database.connection?.listRoutines(filter);
 }
 
-async function listTableColumns(server: IDbConnectionServer, database: IDbConnectionDatabase, table?: string, schema?: string) {
+async function listTableColumns(
+  server: IDbConnectionServer,
+  database: IDbConnectionDatabase,
+  table?: string,
+  schema?: string): Promise<TableColumn[]> {
   checkIsConnected(server , database);
-  return await database.connection?.listTableColumns(database.database, table, schema) || [];
+  return await database.connection?.listTableColumns(database.database, table, schema) || Promise.resolve([]);
 }
 
-function listMaterializedViewColumns(server: IDbConnectionServer, database: IDbConnectionDatabase, table: string, schema: string) {
+function listMaterializedViewColumns(
+  server: IDbConnectionServer,
+  database: IDbConnectionDatabase,
+  table: string,
+  schema?: string): Promise<TableColumn[]> {
   checkIsConnected(server , database);
   if (database.connection?.listMaterializedViewColumns) {
-    return database.connection?.listMaterializedViewColumns(database.database, table, schema)
+    return database.connection?.listMaterializedViewColumns(database.database, table, schema) || Promise.resolve([])
   } else {
-    return []
+    return Promise.resolve([])
   }
 }
 

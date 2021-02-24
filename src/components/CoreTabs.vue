@@ -1,7 +1,8 @@
 <template>
   <div  class="core-tabs" v-hotkey="keymap">
     <div class="tabs-header">
-      <Draggable v-model="tabItems" tag="ul" class="nav-tabs nav" chosen-class="nav-item-wrap-chosen">
+      <!-- <div class="nav-tabs nav"> -->
+      <Draggable :options="dragOptions" v-model="tabItems" tag="ul" class="nav-tabs nav" chosen-class="nav-item-wrap-chosen">
         <core-tab-header
           v-for="tab in tabItems"
           :key="tab.id"
@@ -15,22 +16,35 @@
           @duplicate="duplicate"
           ></core-tab-header>
       </Draggable>
+      <!-- </div> -->
       <span class="actions">
         <a @click.prevent="createQuery(null)" class="btn-fab add-query"><i class=" material-icons">add_circle</i></a>
       </span>
     </div>
     <div class="tab-content">
+      <div class="layout-center expand">
+        <shortcut-hints></shortcut-hints>
+      </div>
       <div
         v-for="(tab, idx) in tabItems"
         class="tab-pane"
         :id="'tab-' + idx"
         :key="tab.id"
-        :class="{show: (activeTab === tab), active: (activeTab === tab)}"
+        :class="{active: (activeTab === tab)}"
+        v-show="activeTab === tab"
       >
         <QueryEditor v-if="tab.type === 'query'" :active="activeTab === tab" :tab="tab" :tabId="tab.id" :connection="connection"></QueryEditor>
         <TableTable @setTabTitleScope="setTabTitleScope" v-if="tab.type === 'table'" :active="activeTab === tab" :tabId="tab.id" :connection="tab.connection" :initialFilter="tab.initialFilter" :table="tab.table"></TableTable>
       </div>
     </div>
+    <ExportModal 
+      v-if="showExportModal" 
+      :connection="this.connection" 
+      :table="tableExportOptions.table" 
+      :filters="tableExportOptions.filters"
+      @close="showExportModal = false"
+    ></ExportModal>
+    <ExportNotification v-for="exporter in exports" :key="exporter.id" :exporter="exporter"></ExportNotification>
   </div>
 </template>
 
@@ -41,21 +55,29 @@
   import {FavoriteQuery} from '../common/appdb/models/favorite_query'
   import QueryEditor from './TabQueryEditor'
   import CoreTabHeader from './CoreTabHeader'
+  import ExportModal from './export/ExportModal'
+  import ExportNotification from './export/ExportNotification'
   import { uuidv4 } from '@/lib/uuid'
   import TableTable from './tableview/TableTable'
   import AppEvent from '../common/AppEvent'
   import platformInfo from '../common/platform_info'
   import { mapGetters, mapState } from 'vuex'
   import Draggable from 'vuedraggable'
+  import ShortcutHints from './editor/ShortcutHints.vue'
 
   export default {
     props: [ 'connection' ],
-    components: { QueryEditor, CoreTabHeader, TableTable, Draggable },
+    components: { QueryEditor, CoreTabHeader, TableTable, Draggable, ShortcutHints, ExportModal, ExportNotification },
     data() {
       return {
         tabItems: [],
         activeItem: 0,
-        newTabId: 1
+        newTabId: 1,
+        showExportModal: false,
+        tableExportOptions: null,
+        dragOptions: {
+          handle: '.nav-item'
+        }
       }
     },
     watch: {
@@ -63,7 +85,8 @@
     },
     computed: {
       ...mapState(["activeTab"]),
-      ...mapGetters({ 
+      ...mapGetters({
+        'exports': 'exports/runningVisibleExports',
         'menuStyle': 'settings/menuStyle',
         'multiTabTable': 'settings/multiTabTable' 
       }),
@@ -188,6 +211,10 @@
         }
         this.addTab(t)
       },
+      openExportModal(options) {
+        this.tableExportOptions = options
+        this.showExportModal = true
+      },
       openSettings(settings) {
         const t = {
           title: "Settings",
@@ -259,6 +286,7 @@
       this.$root.$on('loadTable', this.openTable)
       this.$root.$on('loadSettings', this.openSettings)
       this.$root.$on('loadTableCreate', this.loadTableCreate)
+      this.$root.$on('exportTable', this.openExportModal)
       this.$root.$on('loadRoutineCreate', this.loadRoutineCreate)
       this.$root.$on('favoriteClick', (item) => {
         const queriesOnly = this.tabItems.map((item) => {

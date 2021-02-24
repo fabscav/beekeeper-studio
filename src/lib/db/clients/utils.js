@@ -115,23 +115,15 @@ export async function genericSelectTop(conn, table, offset, limit, orderBy, filt
   const result = await executor(conn, { query, params })
   const rowWithTotal = countResults.data.find((row) => { return row.total })
   const totalRecords = rowWithTotal ? rowWithTotal.total : 0
-  console.log('selectTop result', result, totalRecords)
   return {
     result: result.data,
-    totalRecords: Number(totalRecords)
+    totalRecords: Number(totalRecords),
+    fields: Object.keys(result.data[0] || {})
   }
 }
 
 export function buildInsertQueries(knex, inserts) {
-
   return inserts.map(insert => {
-    // remove empty pkColumn data if present
-    insert.data = _.omitBy(insert.row.getData(), (value, key) => {
-      return (key === insert.pkColumn && !value)
-    })
-    
-    console.log("inserts", inserts)
-
     const query = knex(insert.table)
       .insert(insert.data)
       .toQuery()

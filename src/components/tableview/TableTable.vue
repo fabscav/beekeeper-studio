@@ -27,6 +27,7 @@
           </div>
           <div class="btn-wrap">
             <button class="btn btn-primary" type="submit">Search</button>
+            <button class="btn btn-flat" type="button" @click.prevent="exportTable()">Export</button>
           </div>
         </div>
         <div v-else-if="filterMode === 'builder'" class="filter-group row gutter">
@@ -72,6 +73,7 @@
           </div>
           <div class="btn-wrap">
             <button class="btn btn-primary" type="submit">Search</button>
+            <button class="btn btn-flat" type="button" @click.prevent="exportTable()">Export</button>
           </div>
           <div class="btn-wrap">
             <x-button class="btn" :class="{'btn-flat': allColumnsSelected, 'btn-info': !allColumnsSelected}">
@@ -224,7 +226,8 @@ export default {
       lastUpdatedText: null,
       interval: setInterval(this.setlastUpdatedText, 10000),
       totalRecords: 0,
-      visibleColumns: []
+      visibleColumns: [],
+      forceRedraw: false
     };
   },
   computed: {
@@ -312,7 +315,9 @@ export default {
           width: columnWidth,
           cssClass: isPK ? 'primary-key' : '',
           editable: this.cellEditCheck,
+          headerSort: this.allowHeaderSort(column),
           editor: editorType,
+
           variableHeight: true,
           headerTooltip: headerTooltip,
           cellEditCancelled: cell => cell.getRow().normalizeHeight(),
@@ -392,11 +397,28 @@ export default {
       if (!this.tabulator) return;
       if (this.active) {
         this.tabulator.restoreRedraw()
-        this.$nextTick(() => {
-          this.tabulator.redraw()
-        })
+        if (this.forceRedraw) {
+          this.forceRedraw = false
+          this.$nextTick(() => {
+            log.debug(`force redraw, table ${this.table.name}, tab ${this.tabId}`)
+            this.tabulator.redraw(true)
+          })
+        }
       } else {
         this.tabulator.blockRedraw()
+      }
+    },
+    tableColumns: {
+      deep: true,
+      async handler() {
+        if(!this.tabulator) {
+          return
+        }
+        if (!this.active) {
+          this.forceRedraw = true
+        }
+        await this.tabulator.setColumns(this.tableColumns)
+        await this.refreshTable()
       }
     },
     filterValue() {
@@ -447,10 +469,9 @@ export default {
     if (this.initialFilter) {
       this.filter = _.clone(this.initialFilter)
     }
-
     this.showAllColumns()
     this.resetPendingChanges()
-
+    await this.$store.dispatch('updateTableColumns', this.table)
     this.rawTableKeys = await this.connection.getTableKeys(this.table.name, this.table.schema)
     this.primaryKey = await this.connection.getPrimaryKey(this.table.name, this.table.schema)
     this.tabulator = new Tabulator(this.$refs.table, {
@@ -464,6 +485,7 @@ export default {
       pagination: "remote",
       paginationSize: this.limit,
       paginationElement: this.$refs.paginationArea,
+      columnMaxInitialWidth: 300,
       initialSort: this.initialSort,
       initialFilter: [this.initialFilter || {}],
       lastUpdated: null,
@@ -523,6 +545,11 @@ export default {
       const valueCell = cell.getRow().getCell(fromColumn)
       return valueCell
     },
+    allowHeaderSort(column) {
+      if(!column.dataType) return true
+      if(column.dataType.startsWith('json')) return false
+      return true
+    },
     slimDataType(dt) {
       if (!dt) return null
       if(dt === 'bit(1)') return dt
@@ -534,6 +561,7 @@ return dt.split("(")[0]
         case 'text': return 'textarea'
         case 'json': return 'textarea'
         case 'jsonb': return 'textarea'
+        case 'bytea': return 'textarea'
         case 'bool': return 'select'
         default: return 'input'
       }
@@ -668,6 +696,11 @@ return dt.split("(")[0]
     },
     addPendingChange(changeType, payload) {
       if (changeType === CHANGE_TYPE_INSERT) {
+        // remove empty pkColumn data if present
+        payload.data = _.omitBy(payload.row.getData(), (value, key) => {
+          return (key === payload.pkColumn && !value)
+        })
+
         this.pendingChanges.inserts.push(payload)
       }
 
@@ -745,6 +778,10 @@ return dt.split("(")[0]
           this.$noty.error("Error saving changes")
           
           return
+        } finally {
+          if (!this.active) {
+            this.forceRedraw = true
+          }
         }
     },
     discardChanges() {
@@ -821,13 +858,18 @@ return dt.split("(")[0]
               filters,
               this.table.schema
             );
+            if (_.difference(response.fields, this.table.columns.map(c => c.columnName)).length > 0) {
+              log.debug('table has changed, updating')
+              await this.$store.dispatch('updateTableColumns', this.table)
+            }
+
             const r = response.result;
             this.totalRecords = Number(response.totalRecords) || 0;
             this.response = response
             this.resetPendingChanges()
             this.clearQueryError()
             const data = this.dataToTableData({ rows: r }, this.tableColumns);
-            this.data = data
+            this.data = Object.freeze(data)
             this.lastUpdated = Date.now()
             resolve({
               last_page: Math.ceil(this.totalRecords / limit),
@@ -839,6 +881,10 @@ return dt.split("(")[0]
             this.$nextTick(() => {
               this.tabulator.clearData()
             })
+          } finally {
+            if (!this.active) {
+              this.forceRedraw = true
+            }
           }
         })();
       });
@@ -863,11 +909,15 @@ return dt.split("(")[0]
     clearQueryError() {
       this.queryError = null
     },
-    refreshTable() {
+    async refreshTable() {
       const page = this.tabulator.getPage()
-      this.tabulator.replaceData()
+      await this.tabulator.replaceData()
       this.tabulator.setPage(page)
+      if (!this.active) this.forceRedraw = true
     },
+    exportTable() {
+      this.$root.$emit('exportTable', { table: this.table, filters: this.filterForTabulator })
+    }
   }
 };
 </script>
