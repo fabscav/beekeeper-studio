@@ -1,23 +1,30 @@
 import fs from 'fs'
+import path from 'path'
 import crypto from 'crypto'
 import remote from 'electron'
 import { DBConnection, TableOrView, TableFilter, TableResult } from '@/lib/db/client'
 
+export interface ExportOptions {
+  chunkSize: number,
+  deleteOnAbort: boolean
+}
+
 export abstract class Export {
   id: string
-  chunkSize: number = 500
   connection: DBConnection
   countExported: number = 0
   countTotal: number = 0
   error: Error | null = null
-  fileName: string
+  filePath: string
   fileSize: number = 0
   filters: TableFilter[] | any[]
   lastChunkTime: number = 0
+  options: ExportOptions
   outputOptions: any
   showNotification: boolean = true
   status: Export.Status = Export.Status.Idle
   table: TableOrView
+  timeElapsed: number = 0
   timeLeft: number = 0
 
   abstract getHeader(firstRow: any): Promise<string | void>
@@ -25,16 +32,18 @@ export abstract class Export {
   abstract formatChunk(data: any): string[]
 
   constructor(
-    fileName: string,
+    filePath: string,
     connection: DBConnection,
     table: TableOrView,
     filters: TableFilter[] | any[],
+    options: ExportOptions,
     outputOptions: any
   ) {
-    this.fileName = fileName
+    this.filePath = filePath
     this.connection = connection
     this.table = table
     this.filters = filters
+    this.options = options
     this.outputOptions = outputOptions
     this.id = this.generateId()
   }
@@ -44,7 +53,7 @@ export abstract class Export {
 
     md5sum.update(Date.now().toString(), 'utf8')
     md5sum.update(this.table.name)
-    md5sum.update(this.fileName)
+    md5sum.update(this.filePath)
 
     return md5sum.digest('hex')
   }
@@ -71,71 +80,89 @@ export abstract class Export {
   }
 
   async writeToFile(content: string) {
-    return await fs.promises.appendFile(this.fileName, content + "\n")
+    return await fs.promises.appendFile(this.filePath, content + "\n")
   }
 
   async deleteFile() {
-    return await fs.promises.unlink(this.fileName)
+    return await fs.promises.unlink(this.filePath)
   }
 
-  async exportToFile(): Promise<any> {
-    try {
-      const firstRow = await this.getFirstRow()
-      const header = await this.getHeader(firstRow)
-      const footer = await this.getFooter()
+  async initExport(): Promise<void> {
+    this.status = Export.Status.Exporting
+    this.countExported = 0
+    
+    const firstRow = await this.getFirstRow()
+    const header = await this.getHeader(firstRow)
+    
+    await fs.promises.open(this.filePath, 'w+')
 
-      this.countExported = 0
-      this.status = Export.Status.Exporting
+    if (header) {
+      await this.writeToFile(header)
+    }
+  }
 
-      await fs.promises.open(this.fileName, 'w+')
+  async exportData(): Promise<void> {
+      const chunk = await this.getChunk(this.countExported, this.options.chunkSize)
 
-      if (header) {
-        await this.writeToFile(header)
+      if (!chunk) {
+        this.status = Export.Status.Aborted
+        return
       }
 
-      do {
-        const chunk = await this.getChunk(this.countExported, this.chunkSize)
+      for (const formattedRow of this.formatChunk(chunk.result)) {
+        await this.writeToFile(formattedRow)
+      }
 
-        if (!chunk) {
-          this.status = Export.Status.Aborted
-          continue
-        }
+      this.countTotal = chunk.totalRecords
+      this.countExported += chunk.result.length
+      const stats = await fs.promises.stat(this.filePath)
+      this.fileSize = stats.size
+      this.calculateTimeLeft()
 
-        for (const formattedRow of this.formatChunk(chunk.result)) {
-          await this.writeToFile(formattedRow)
-        }
+      if (this.countExported < this.countTotal && this.status === Export.Status.Exporting) {
+        await this.exportData()
+      }
+  }
 
-        this.countTotal = chunk.totalRecords
-        this.countExported += chunk.result.length
-        const stats = await fs.promises.stat(this.fileName)
-        this.fileSize = stats.size
-        this.calculateTimeLeft()
-      } while (this.countExported < this.countTotal && this.status === Export.Status.Exporting)
+  async finalizeExport(): Promise<void> {
+    const footer = await this.getFooter()
+
+    if (footer) {
+      await this.writeToFile(footer)
+    }
+
+    this.status = Export.Status.Completed
+  }
+
+  async exportToFile(): Promise<void> {
+    try {
+      await this.initExport()
+      await this.exportData()
 
       if (this.status === Export.Status.Aborted) {
-        await this.deleteFile()
-        return Promise.reject()
+        if (this.options.deleteOnAbort) {
+          await this.deleteFile()
+        }
+        return
       }
 
-      if (footer) {
-        await this.writeToFile(footer)
-      }
-
-      this.status = Export.Status.Completed
-
-      return Promise.resolve()
+      await this.finalizeExport()
     } catch (error) {
       this.status = Export.Status.Error
       this.error = error
+
+      if (this.options.deleteOnAbort) {
+        await this.deleteFile()
+      }
     }
   }
 
   calculateTimeLeft(): void {
     if (this.lastChunkTime) {
-      const lastChunkDuration = Date.now() - this.lastChunkTime
-      const chunksLeft = Math.round((this.countTotal - this.countExported) / this.chunkSize)
-
-      this.timeLeft = chunksLeft * lastChunkDuration
+      this.timeElapsed += (Date.now() - this.lastChunkTime)
+      const recordsLeft = this.countTotal - this.countExported
+      const timePerRecord = this.timeElapsed / this.countExported
+      this.timeLeft = Math.round(timePerRecord * recordsLeft)
     }
 
     this.lastChunkTime = Date.now()
@@ -154,7 +181,19 @@ export abstract class Export {
   }
 
   openFile(): void {
-    remote.shell.openPath(this.fileName)
+    remote.shell.openPath(this.filePath)
+  }
+
+  getFileName(): string {
+    return path.basename(this.filePath)
+  }
+
+  getFilterString(): string {
+    if (typeof this.filters === 'object') {
+      return JSON.stringify(this.filters)
+    }
+
+    return this.filters
   }
 }
 

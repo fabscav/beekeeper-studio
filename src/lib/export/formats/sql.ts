@@ -1,4 +1,4 @@
-import { Export } from "@/lib/export/export";
+import { Export, ExportOptions } from "@/lib/export";
 import { DBConnection, TableOrView, TableFilter } from '@/lib/db/client'
 import knexlib from 'knex'
 
@@ -6,7 +6,7 @@ interface OutputOptionsSql {
   createTable: boolean,
   schema: boolean
 }
-export default class SqlExporter extends Export {
+export class SqlExporter extends Export {
   readonly format: string = 'sql'
   readonly knexTypes: any = {
     "cockroachdb": "pg",
@@ -19,13 +19,14 @@ export default class SqlExporter extends Export {
   knex: any = null
 
   constructor(
-    fileName: string,
+    filePath: string,
     connection: DBConnection,
     table: TableOrView,
     filters: TableFilter[] | any[],
+    options: ExportOptions,
     outputOptions: OutputOptionsSql
   ) {
-    super(fileName, connection, table, filters, outputOptions)
+    super(filePath, connection, table, filters, options, outputOptions)
 
     if (!this.connection.connectionType || !this.knexTypes[this.connection.connectionType]) {
       throw new Error("SQL export not supported on connectiont type " + this.connection.connectionType)
@@ -41,7 +42,7 @@ export default class SqlExporter extends Export {
     }
   }
 
-  async getFooter() { }
+  async getFooter() {}
 
   formatChunk(data: any): string[] {
     const formattedChunk = []

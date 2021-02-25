@@ -14,7 +14,7 @@ jest.mock('@/lib/db/clients', () => {
       ]
 
       return {
-        selectTop: (table, offset, limit, orderBy, filters, schema) => {
+        selectTop: (table, offset, limit) => {
           return {
             result: fakeData.slice(offset, offset + limit),
             totalRecords: fakeData.length
@@ -30,7 +30,8 @@ describe('Export Class Unit Test', () => {
 
   beforeAll(() => {
     const dummyConnection = new DBConnection()
-    dummyExport = new DummyExport('fakeFile', dummyConnection, { schema: '', name: 'table' }, [], {})
+    const options = { chunkSize: 1, deleteOnAbort: true }
+    dummyExport = new DummyExport('fakeFile', dummyConnection, { schema: '', name: 'table' }, [], options, {})
   })
 
   afterEach(() => {
@@ -82,32 +83,37 @@ describe('Export Class Unit Test', () => {
   it('should delete the export file', async () => {
     jest.spyOn(fs.promises, 'unlink').mockImplementation()
     dummyExport.deleteFile()
-    expect(fs.promises.unlink).toHaveBeenCalledWith(dummyExport.fileName)
+    expect(fs.promises.unlink).toHaveBeenCalledWith(dummyExport.filePath)
   })
 
   it('should write string line to file', async () => {
     jest.spyOn(fs.promises, 'appendFile').mockImplementation()
     dummyExport.writeToFile('test')
-    expect(fs.promises.appendFile).toHaveBeenCalledWith(dummyExport.fileName, 'test\n')
+    expect(fs.promises.appendFile).toHaveBeenCalledWith(dummyExport.filePath, 'test\n')
     expect(fs.promises.appendFile).toHaveBeenCalledTimes(1)
   })
 
   it('should try to write all chunks to file', async () => {
-    dummyExport.chunkSize = 1
     dummyExport.getHeader = () => null
     dummyExport.getFooter = () => null
-    dummyExport.formatChunk = (chunk) => ['a', 'b', 'c']
+    dummyExport.formatChunk = () => ['a', 'b', 'c']
 
     jest.spyOn(fs.promises, 'open').mockImplementation()
     jest.spyOn(fs.promises, 'appendFile').mockImplementation()
     jest.spyOn(fs.promises, 'stat').mockImplementation(() => Promise.resolve({ size: 1 }))
+    jest.spyOn(dummyExport, 'initExport')
+    jest.spyOn(dummyExport, 'exportData')
     jest.spyOn(dummyExport, 'formatChunk')
+    jest.spyOn(dummyExport, 'finalizeExport')
 
     await dummyExport.exportToFile()
 
     expect(dummyExport.error).toBeNull()
     expect(fs.promises.open).toHaveBeenCalled()
     expect(fs.promises.appendFile).toHaveBeenCalledTimes(9)
+    expect(dummyExport.initExport).toHaveBeenCalledTimes(1)
+    expect(dummyExport.exportData).toHaveBeenCalledTimes(3)
     expect(dummyExport.formatChunk).toHaveBeenCalledTimes(3)
+    expect(dummyExport.finalizeExport).toHaveBeenCalledTimes(1)
   })
 })

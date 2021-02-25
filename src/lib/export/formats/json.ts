@@ -1,21 +1,22 @@
-import { Export } from "@/lib/export/export";
+import { Export, ExportOptions } from "@/lib/export";
 import { DBConnection, TableOrView, TableFilter } from '@/lib/db/client'
 import indentString from 'indent-string'
 
 interface OutputOptionsJson {
   prettyprint: boolean
 }
-export default class JsonExporter extends Export {
+export class JsonExporter extends Export {
   readonly format: string = 'json'
 
   constructor(
-    fileName: string,
+    filePath: string,
     connection: DBConnection,
     table: TableOrView,
     filters: TableFilter[] | any[],
+    options: ExportOptions,
     outputOptions: OutputOptionsJson
   ) {
-    super(fileName, connection, table, filters, outputOptions)
+    super(filePath, connection, table, filters, options, outputOptions)
   }
 
   async getHeader(firstRow: any) {

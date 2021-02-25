@@ -46,8 +46,34 @@
             </div>
             <component
               v-bind:is="selectedExportFormat.component"
-              v-model="options"
+              v-model="outputOptions"
             ></component>
+            <div class="modal-form export-form export-advanced-options">
+              <div class="dialog-c-title">Advanced Options</div>
+              <div class="form-group row">
+                <label>Chunk size</label>
+                  <input
+                    v-model="options.chunkSize"
+                    type="number"
+                    class="form-control"
+                    ref="paramInput"
+                    min="10"
+                    step="10"
+                  />
+              </div>
+              <div class="form-group row">
+                <label for="deleteOnAbort" class="checkbox-group">
+                  <input
+                    v-model="options.deleteOnAbort"
+                    id="deleteOnAbort"
+                    type="checkbox"
+                    name="deleteOnAbort"
+                    class="form-control"
+                  />
+                  <span>Delete file on abort/error</span>
+                </label>
+              </div>
+            </div>
           </div>
         </div>
         <div class="vue-dialog-buttons">
@@ -71,19 +97,13 @@
   </div>
 </template>
 <script>
-import _ from "lodash";
-import { remote } from "electron";
-import { mapMutations } from "vuex";
-import CsvExporter from "@/lib/export/formats/csv";
-import JsonExporter from "@/lib/export/formats/json";
-import SqlExporter from "@/lib/export/formats/sql";
-import ExportFormCSV from "./forms/ExportFormCSV";
-import ExportFormJSON from "./forms/ExportFormJSON";
-import ExportFormSQL from "./forms/ExportFormSQL";
-import { Export } from "@/lib/export/export";
+import _ from "lodash"
+import { remote } from "electron"
+import { mapMutations } from "vuex"
+import { Export, CsvExporter, JsonExporter, SqlExporter } from "@/lib/export"
+import { ExportFormCSV, ExportFormJSON, ExportFormSQL } from "./forms"
 
 export default {
-  components: { ExportFormCSV, ExportFormSQL },
   props: {
     connection: {
       required: true,
@@ -118,8 +138,8 @@ export default {
           exporter: SqlExporter,
         },
       ],
-      fileName: null,
-      options: {},
+      options: { chunkSize: 500, deleteOnAbort: false },
+      outputOptions: {},
       Export: Export,
       error: null,
     };
@@ -153,28 +173,28 @@ export default {
     async chooseFile() {
       this.error = null;
 
-      this.fileName = remote.dialog.showSaveDialogSync(null, {
+      const filePath = remote.dialog.showSaveDialogSync(null, {
         defaultPath: [this.table.name, this.selectedExportFormat.key].join("."),
       });
 
-      if (this.fileName === undefined) {
+      if (filePath === undefined) {
         return;
       }
 
       try {
         const exporter = new this.selectedExportFormat.exporter(
-          this.fileName,
+          filePath,
           this.connection,
           this.table,
           this.filters,
-          this.options
+          this.options,
+          this.outputOptions
         );
 
-        this.$emit("close");
-        this.$emit("exportCreated", exporter);
         this.addExport(exporter);
-
         exporter.exportToFile();
+
+        this.$emit("close");
       } catch (error) {
         this.error = error;
       }
