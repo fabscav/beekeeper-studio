@@ -86,7 +86,8 @@
           { event: 'loadSettings', handler: this.openSettings },
           { event: 'loadTableCreate', handler: this.loadTableCreate },
           { event: 'loadRoutineCreate', handler: this.loadRoutineCreate },
-          { event: 'favoriteClick', handler: this.favoriteClick }
+          { event: 'favoriteClick', handler: this.favoriteClick },
+          { event: 'exportTable', handler: this.openExportModal }
         ]
       }
     },
@@ -282,29 +283,8 @@
           duplicatedTab['table'] = tab.table
         }
         this.addTab(duplicatedTab)
-<<<<<<< HEAD
-      }
-    },
-    mounted() {
-      this.createQuery()
-      this.$root.$on(AppEvent.closeTab, () => {
-        this.closeTab()
-      })
-      this.$root.$on(AppEvent.newTab, () => { this.createQuery() })
-      this.$root.$on('historyClick', (item) => {
-        this.createQuery(item.text)
-      })
-
-      this.$root.$on('loadTable', this.openTable)
-      this.$root.$on('loadSettings', this.openSettings)
-      this.$root.$on('loadTableCreate', this.loadTableCreate)
-      this.$root.$on('exportTable', this.openExportModal)
-      this.$root.$on('loadRoutineCreate', this.loadRoutineCreate)
-      this.$root.$on('favoriteClick', (item) => {
-=======
       },
       favoriteClick(item) {
->>>>>>> master
         const queriesOnly = this.tabItems.map((item) => {
           return item.query
         })
