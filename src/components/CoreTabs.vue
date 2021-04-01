@@ -77,7 +77,17 @@
         tableExportOptions: null,
         dragOptions: {
           handle: '.nav-item'
-        }
+        },
+        rootBindings: [
+          { event: AppEvent.closeTab, handler: this.closeTab },
+          { event: AppEvent.newTab, handler: this.createQuery},
+          { event: 'historyClick', handler: this.createQueryFromItem},
+          { event: 'loadTable', handler: this.openTable },
+          { event: 'loadSettings', handler: this.openSettings },
+          { event: 'loadTableCreate', handler: this.loadTableCreate },
+          { event: 'loadRoutineCreate', handler: this.loadRoutineCreate },
+          { event: 'favoriteClick', handler: this.favoriteClick }
+        ]
       }
     },
     watch: {
@@ -147,6 +157,7 @@
         this.tabItems.filter(t => t.id === id).forEach(t => t.titleScope = value)
       },
       closeTab() {
+        console.log('close tab', this.activeTab)
         this.close(this.activeTab)
       },
       handleCreateTab() {
@@ -271,6 +282,7 @@
           duplicatedTab['table'] = tab.table
         }
         this.addTab(duplicatedTab)
+<<<<<<< HEAD
       }
     },
     mounted() {
@@ -289,6 +301,10 @@
       this.$root.$on('exportTable', this.openExportModal)
       this.$root.$on('loadRoutineCreate', this.loadRoutineCreate)
       this.$root.$on('favoriteClick', (item) => {
+=======
+      },
+      favoriteClick(item) {
+>>>>>>> master
         const queriesOnly = this.tabItems.map((item) => {
           return item.query
         })
@@ -305,8 +321,22 @@
             unsavedChanges: false
           }
           this.addTab(result)
-        }
+        }        
+      },
+      createQueryFromItem(item) {
+        this.createQuery(item.text)
+      }
+    },
+    beforeDestroy() {
+      this.rootBindings.forEach(({event, handler}) => {
+        this.$root.$off(event, handler)
       })
+    },
+    mounted() {
+      this.rootBindings.forEach(({ event, handler }) => {
+        this.$root.$on(event, handler)
+      })
+      this.createQuery()
     }
   }
 </script>

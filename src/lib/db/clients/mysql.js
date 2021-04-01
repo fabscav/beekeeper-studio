@@ -1,14 +1,14 @@
 // Copyright (c) 2015 The SQLECTRON Team
-import { readFileSync } from 'fs'
-import _ from 'lodash'
+import rawLog from 'electron-log';
+import { readFileSync } from 'fs';
+import knexlib from 'knex';
+import _ from 'lodash';
 import mysql from 'mysql2';
 import { identify } from 'sql-query-identifier';
-import knexlib from 'knex'
-
 import { createCancelablePromise } from '../../../common/utils';
 import { errors } from '../../errors';
-import { buildInsertQueries, buildDeleteQueries, genericSelectTop } from './utils';
-import rawLog from 'electron-log'
+import { buildDeleteQueries, buildInsertQueries, buildSelectTopQuery } from './utils';
+
 const log = rawLog.scope('mysql')
 const logger = () => log
 
@@ -177,7 +177,26 @@ export async function listTableColumns(conn, database, table) {
 }
 
 export async function selectTop(conn, table, offset, limit, orderBy, filters) {
-  return genericSelectTop(conn, table, offset, limit, orderBy, filters, driverExecuteQuery)
+
+  const queries = buildSelectTopQuery(table, offset, limit, orderBy, filters)
+  let title = 'total'
+  if(!filters) {
+    // Note: We don't use wrapIdentifier here because it's a string, not an identifier.
+    queries.countQuery = `show table status like '${table}'`;
+    title = 'Rows'
+  }
+
+  const { query, countQuery, params } = queries
+  const countResults = await driverExecuteQuery(conn, { query: countQuery, params })
+  const result = await driverExecuteQuery(conn, { query, params })
+  const rowWithTotal = countResults.data.find((row) => { return row[title] })
+  const totalRecords = rowWithTotal ? rowWithTotal[title] : 0
+  return {
+    result: result.data,
+    totalRecords: Number(totalRecords),
+    fields: Object.keys(result.data[0] || {})
+  }  
+
 }
 
 export async function listTableTriggers(conn, table) {
@@ -576,15 +595,16 @@ function getRealError(conn, err) {
 }
 
 function parseFields(fields, rowsAsArray) {
+  if (!fields) return []
   return fields.map((field, idx) => {
-    return { id: rowsAsArray ? `c${idx}` : field.name, ...field }
-  })
+      return { id: rowsAsArray ? `c${idx}` : field.name, ...field }
+    })
 }
 
 
 function parseRowQueryResult(data, rawFields, command, rowsAsArray = false) {
   // Fallback in case the identifier could not reconize the command
-  const fields = parseFields(rawFields, rowsAsArray)
+  const fields = parseFields(rawFields, rowsAsArray) 
   const fieldIds = fields.map(f => f.id)
   const isSelect = Array.isArray(data);
   return {
@@ -616,7 +636,6 @@ function driverExecuteQuery(conn, queryArgs) {
   logger().debug(`Running Query ${queryArgs.query}`)
   const runQuery = (connection) => new Promise((resolve, reject) => {
     connection.query({ sql: queryArgs.query, values: queryArgs.params, rowsAsArray: queryArgs.rowsAsArray }, (err, data, fields) => {
-      logger().debug(`Resolving Query ${queryArgs.query}`, queryArgs.params)
       if (err && err.code === mysqlErrors.EMPTY_QUERY) return resolve({});
       if (err) return reject(getRealError(connection, err));
 
@@ -680,4 +699,9 @@ export function filterDatabase(item, { database } = {}, databaseField) {
   }
 
   return true;
+}
+
+
+export const testOnly = {
+  parseFields
 }

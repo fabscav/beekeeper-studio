@@ -104,7 +104,7 @@
     <div ref="table"></div>
     <statusbar :mode="statusbarMode" class="tabulator-footer">
       <div class="col x4">
-        <span class="statusbar-item" v-if="lastUpdatedText && !queryError" :title="`${totalRecordsText} Total Records`">
+        <span class="statusbar-item" v-if="lastUpdatedText && !queryError" :title="`~${totalRecordsText} Records`">
           <i class="material-icons">list_alt</i>
           <span>{{ totalRecordsText }}</span>
         </span>
@@ -166,6 +166,7 @@
 </style>
 
 <script>
+import Vue from 'vue'
 import Tabulator from "tabulator-tables";
 // import pluralize from 'pluralize'
 import data_converter from "../../mixins/data_converter";
@@ -174,6 +175,7 @@ import Statusbar from '../common/StatusBar'
 import rawLog from 'electron-log'
 import _ from 'lodash'
 import TimeAgo from 'javascript-time-ago'
+import globals from '@/common/globals';
 
 const CHANGE_TYPE_INSERT = 'insert'
 const CHANGE_TYPE_UPDATE = 'update'
@@ -183,7 +185,7 @@ const log = rawLog.scope('TableTable')
 const FILTER_MODE_BUILDER = 'builder'
 const FILTER_MODE_RAW = 'raw'
 
-export default {
+export default Vue.extend({
   components: { Statusbar },
   mixins: [data_converter, DataMutators],
   props: ["table", "connection", "initialFilter", "tabId", "active"],
@@ -231,6 +233,67 @@ export default {
     };
   },
   computed: {
+    cellContextMenu() {
+      return [{
+          label: '<x-menuitem><x-label>Set Null</x-label></x-menuitem>',
+          action: (e, cell) => {
+            cell.setValue(null);
+          },
+          disabled: this.writeModeReadonly
+        },
+        { separator: true },
+        {
+          label: '<x-menuitem><x-label>Copy</x-label></x-menuitem>',
+          action: (e, cell) => {
+            this.$native.clipboard.writeText(cell.getValue());
+          },
+        },
+        {
+          label: '<x-menuitem><x-label>Paste</x-label></x-menuitem>',
+          action: (e, cell) => {
+            cell.setValue(this.$native.clipboard.readText())
+          },
+          disabled: this.writeModeReadonly
+        },
+        { separator: true },
+        {
+          disabled: this.writeModeReadonly,
+          label: '<x-menuitem><x-label><i class="material-icons">add_circle_outline</i> Add row</x-label></x-menuitem>',
+          action: () => {
+            this.tabulator.addRow({}, false).then(row => { 
+              this.addRowToPendingInserts(row)
+              this.tabulator.scrollToRow(row, 'bottom', false)
+            })
+          }
+        },
+        {
+          disabled: this.writeModeReadonly,
+          label: '<x-menuitem><x-label><i class="material-icons">content_copy</i> Clone row</x-label></x-menuitem>',
+          action: (e, cell) => {
+            let data = { ...cell.getRow().getData() }
+
+            if (this.primaryKey) {
+              data[this.primaryKey] = undefined
+            }
+
+            this.tabulator.addRow(data, false).then(row => {
+              this.addRowToPendingInserts(row)
+              this.tabulator.scrollToRow(row, 'bottom', false)
+            })
+          }
+        },
+        {
+          separator:true,
+        },
+        {
+          disabled: this.writeModeReadonly,
+          label: '<x-menuitem><x-label><i class="material-icons">delete_outline</i> Delete row</x-label></x-menuitem>',
+          action: (e, cell) => {
+            this.addRowToPendingDeletes(cell.getRow())
+          }
+        }
+      ]
+    },
     filterPlaceholder() {
       return `Enter condition, eg: name like 'Matthew%'`
     },
@@ -283,10 +346,12 @@ export default {
       this.table.columns.forEach(column => {
 
         const keyData = this.tableKeys[column.columnName]
+
         // this needs fixing
         // currently it doesn't fetch the right result if you update the PK
         // because it uses the PK to fetch the result.
         const slimDataType = this.slimDataType(column.dataType)
+        const width = this.defaultColumnWidth(slimDataType, columnWidth)
         const editorType = this.editorType(column.dataType)
         const useVerticalNavigation = editorType === 'textarea'
         const isPK = this.primaryKey && this.primaryKey === column.columnName
@@ -312,12 +377,13 @@ export default {
           mutatorData: this.resolveDataMutator(column.dataType),
           dataType: column.dataType,
           cellClick: this.cellClick,
-          width: columnWidth,
+          width,
+          maxWidth: globals.maxColumnWidth,
           cssClass: isPK ? 'primary-key' : '',
           editable: this.cellEditCheck,
           headerSort: this.allowHeaderSort(column),
           editor: editorType,
-
+          contextMenu: this.editable ? this.cellContextMenu : null,
           variableHeight: true,
           headerTooltip: headerTooltip,
           cellEditCancelled: cell => cell.getRow().normalizeHeight(),
@@ -394,12 +460,14 @@ export default {
 
   watch: {
     active() {
+      log.debug('active', this.active)
       if (!this.tabulator) return;
       if (this.active) {
         this.tabulator.restoreRedraw()
         if (this.forceRedraw) {
           this.forceRedraw = false
           this.$nextTick(() => {
+            log.debug('forceredraw')
             log.debug(`force redraw, table ${this.table.name}, tab ${this.tabId}`)
             this.tabulator.redraw(true)
           })
@@ -408,9 +476,10 @@ export default {
         this.tabulator.blockRedraw()
       }
     },
-    tableColumns: {
+    table: {
       deep: true,
       async handler() {
+        log.debug('table changed', this.tableColumns)
         if(!this.tabulator) {
           return
         }
@@ -482,10 +551,10 @@ export default {
       ajaxURL: "http://fake",
       ajaxSorting: true,
       ajaxFiltering: true,
+      ajaxLoaderError: `<span style="display:inline-block">Error loading data, see error below</span>`,
       pagination: "remote",
       paginationSize: this.limit,
       paginationElement: this.$refs.paginationArea,
-      columnMaxInitialWidth: 300,
       initialSort: this.initialSort,
       initialFilter: [this.initialFilter || {}],
       lastUpdated: null,
@@ -497,49 +566,15 @@ export default {
         scrollToStart: false,
         scrollPageUp: false,
         scrollPageDown: false
-      },
-      rowContextMenu:[
-        {
-          disabled: this.writeModeReadonly,
-          label: '<x-menuitem><x-label><i class="material-icons">add_circle_outline</i> Add row</x-label></x-menuitem>',
-          action: () => {
-            this.tabulator.addRow({}, false).then(row => { 
-              this.addRowToPendingInserts(row)
-              this.tabulator.scrollToRow(row, 'bottom', false)
-            })
-          }
-        },
-        {
-          disabled: this.writeModeReadonly,
-          label: '<x-menuitem><x-label><i class="material-icons">content_copy</i> Clone row</x-label></x-menuitem>',
-          action: (e, row) => {
-            let data = { ...row.getData() }
-
-            if (this.primaryKey) {
-              data[this.primaryKey] = undefined
-            }
-
-            this.tabulator.addRow(data, false).then(row => {
-              this.addRowToPendingInserts(row)
-              this.tabulator.scrollToRow(row, 'bottom', false)
-            })
-          }
-        },
-        {
-          separator:true,
-        },
-        {
-          disabled: this.writeModeReadonly,
-          label: '<x-menuitem><x-label><i class="material-icons">delete_outline</i> Delete row</x-label></x-menuitem>',
-          action: (e, row) => {
-            this.addRowToPendingDeletes(row)
-          }
-        },
-      ]
+      }
     });
-
   },
   methods: {
+    defaultColumnWidth(slimType, defaultValue) {
+      const chunkyTypes = ['json', 'jsonb', 'text']
+      if (chunkyTypes.includes(slimType)) return globals.largeFieldWidth
+      return defaultValue
+    },
     valueCellFor(cell) {
       const fromColumn = cell.getField().replace(/-link$/g, "")
       const valueCell = cell.getRow().getCell(fromColumn)
@@ -553,8 +588,7 @@ export default {
     slimDataType(dt) {
       if (!dt) return null
       if(dt === 'bit(1)') return dt
-
-return dt.split("(")[0]
+      return dt.split("(")[0]
     },
     editorType(dt) {
       switch (dt) {
@@ -605,6 +639,9 @@ return dt.split("(")[0]
       }
     },
     cellEditCheck(cell) {
+      // check this first because it is easy
+      if (!this.editable) return false
+
       const pendingInsert = _.find(this.pendingChanges.inserts, { row: cell.getRow() })
 
       if (pendingInsert) {
@@ -807,10 +844,10 @@ return dt.split("(")[0]
       this.tabulator.updateData([update])
     },
     triggerFilter() {
-      this.tabulator.setData()
+      if (this.tabulator) this.tabulator.setData()
     },
     clearFilter() {
-      this.tabulator.setData();
+      if (this.tabulator) this.tabulator.setData();
     },
     changeFilterMode(filterMode) {
       // Populate raw filter query with existing filter if raw filter is empty
@@ -876,8 +913,11 @@ return dt.split("(")[0]
               data
             });
           } catch (error) {
-            reject();
-            this.setQueryError('Error loading data', error.message)
+            reject(error.message);
+            this.queryError = {
+              title: error.message,
+              message: error.message
+            }
             this.$nextTick(() => {
               this.tabulator.clearData()
             })
@@ -910,6 +950,7 @@ return dt.split("(")[0]
       this.queryError = null
     },
     async refreshTable() {
+      log.debug('refreshing table')
       const page = this.tabulator.getPage()
       await this.tabulator.replaceData()
       this.tabulator.setPage(page)
@@ -919,5 +960,5 @@ return dt.split("(")[0]
       this.$root.$emit('exportTable', { table: this.table, filters: this.filterForTabulator })
     }
   }
-};
+});
 </script>
