@@ -1,7 +1,18 @@
 # check if default.config.ini was changed and staged
-if git status --porcelain | grep -q '^M  .*default\.config\.ini$'; then
-  yarn bks:config:build;
-  if git status --porcelain | grep -q bkconfig.d.ts; then
-    git add */**/bkconfig.d.ts
+if git diff --cached --name-only | grep -q 'default\.config\.ini$'; then
+  if [ "$SKIP_CONFIG_BUILD" = "1" ]; then
+    echo ""
+    echo "⏭️  Skipping config type generation (SKIP_CONFIG_BUILD=1)"
+    echo ""
+  else
+    echo ""
+    echo "📝 Hey! You changed default.config.ini, so let me regenerate the config types first before we commit your change..."
+    echo "   (To skip this, run: SKIP_CONFIG_BUILD=1 git commit ...)"
+    echo ""
+    yarn bks:config:build
+    git add apps/studio/src/typings/bksConfig.d.ts
+    echo ""
+    echo "✅ Config types regenerated and staged!"
+    echo ""
   fi
 fi
