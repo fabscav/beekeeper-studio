@@ -14,7 +14,7 @@ import { UserSetting } from "@/common/appdb/models/user_setting";
 import semver from "semver";
 import { NotFoundPluginError, NotFoundPluginViewError, NotSupportedPluginError } from "./errors";
 import { isManifestV0, mapViewsAndMenuFromV0ToV1 } from "./utils";
-import { type Module, type ModuleClass } from "./Module";
+import { type Module, type ModuleClass, type ModuleHookMap } from "./Module";
 
 const log = rawLog.scope("PluginManager");
 
@@ -47,6 +47,16 @@ export default class PluginManager {
     this.modules.push(new moduleCls({ manager: this }));
   }
 
+  private async runHooks<K extends keyof ModuleHookMap>(name: K) {
+    for (const module of this.modules) {
+      for (const hook of module.hooks) {
+        if (hook.name === name) {
+          await hook.handler();
+        }
+      }
+    }
+  }
+
   async initialize() {
     if (this.initialized) {
       log.warn("Calling initialize when already initialized");
@@ -56,9 +66,7 @@ export default class PluginManager {
     // FIXME: Migrate to full ini file configuration
     await this.loadPluginSettings();
 
-    for (const module of this.modules) {
-      await module.beforeInitialize();
-    }
+    await this.runHooks("before-initialize");
 
     const installedPlugins = this.fileManager.scanPlugins();
 

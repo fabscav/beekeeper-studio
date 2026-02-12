@@ -3,7 +3,7 @@ import fs from "fs";
 import rawLog from "@bksLogger";
 import platformInfo from "@/common/platform_info";
 import globals from "@/common/globals";
-import { Module } from "@/services/plugin/Module";
+import { Module, type ModuleOptions } from "@/services/plugin/Module";
 
 const log = rawLog.scope("BundledPluginInstaller");
 
@@ -20,7 +20,12 @@ const log = rawLog.scope("BundledPluginInstaller");
  * ```
  **/
 export default class BundledPluginInstaller extends Module {
-  async beforeInitialize() {
+  constructor(options: ModuleOptions) {
+    super(options);
+    this.hook("before-initialize", this.installBundledPlugins);
+  }
+
+  private async installBundledPlugins() {
     for (const plugin of globals.plugins.ensureInstalled) {
       try {
         await this.ensureInstall(plugin);
