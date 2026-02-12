@@ -14,6 +14,7 @@ import { UserSetting } from "@/common/appdb/models/user_setting";
 import semver from "semver";
 import { NotFoundPluginError, NotFoundPluginViewError, NotSupportedPluginError } from "./errors";
 import { isManifestV0, mapViewsAndMenuFromV0ToV1 } from "./utils";
+import { type Module, type ModuleClass } from "./Module";
 
 const log = rawLog.scope("PluginManager");
 
@@ -30,7 +31,7 @@ export default class PluginManager {
   private plugins: PluginContext[] = [];
   pluginSettings: PluginSettings = {};
   private pluginLocks: string[] = [];
-  private beforeInitializeHooks: Function[] = [];
+  private modules: Module[] = [];
 
   /** A Constant for the setting key */
   private static readonly PLUGIN_SETTINGS = "pluginSettings";
@@ -42,8 +43,8 @@ export default class PluginManager {
       new PluginRegistry(new PluginRepositoryService());
   }
 
-  registerBeforeInitialize(hook: Function) {
-    this.beforeInitializeHooks.push(hook);
+  registerModule(moduleCls: ModuleClass) {
+    this.modules.push(new moduleCls({ manager: this }));
   }
 
   async initialize() {
@@ -55,8 +56,8 @@ export default class PluginManager {
     // FIXME: Migrate to full ini file configuration
     await this.loadPluginSettings();
 
-    for (const hook of this.beforeInitializeHooks) {
-      await hook();
+    for (const module of this.modules) {
+      await module.beforeInitialize();
     }
 
     const installedPlugins = this.fileManager.scanPlugins();

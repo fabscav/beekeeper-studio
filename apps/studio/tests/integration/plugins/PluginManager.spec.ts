@@ -16,9 +16,7 @@ import { Manifest } from "@/services/plugin";
 import { UserSetting } from "@/common/appdb/models/user_setting";
 import fs from "fs";
 import path from "path";
-import ensurePluginsInstalled, {
-  resolveBundledPluginPath,
-} from "@commercial/backend/plugin-system/hooks/ensureBundledPluginsInstalled";
+import BundledPluginInstaller from "@commercial/backend/plugin-system/modules/BundledPluginInstaller";
 import aiShellManifest from "@beekeeperstudio/bks-ai-shell/manifest.json";
 import erDiagramManifest from "@beekeeperstudio/bks-er-diagram/manifest.json";
 
@@ -186,12 +184,12 @@ describe("Basic Plugin Management", () => {
       // Plugins are detected by a folder containing a manifest.json.
       // Here we copy from node_modules, but any source works.
       fs.cpSync(
-        resolveBundledPluginPath("@beekeeperstudio/bks-ai-shell"),
+        BundledPluginInstaller.resolve("@beekeeperstudio/bks-ai-shell"),
         path.join(fileManager.options.pluginsDirectory, "bks-ai-shell"),
         { recursive: true }
       );
       fs.cpSync(
-        resolveBundledPluginPath("@beekeeperstudio/bks-er-diagram"),
+        BundledPluginInstaller.resolve("@beekeeperstudio/bks-er-diagram"),
         path.join(fileManager.options.pluginsDirectory, "bks-er-diagram"),
         { recursive: true }
       );
@@ -213,7 +211,7 @@ describe("Basic Plugin Management", () => {
         registry,
         appVersion: AppVer.COMPAT,
       });
-      ensurePluginsInstalled(firstManager);
+      firstManager.registerModule(BundledPluginInstaller);
       await firstManager.initialize();
 
       // Verify plugins were installed
@@ -230,7 +228,7 @@ describe("Basic Plugin Management", () => {
         registry,
         appVersion: AppVer.COMPAT,
       });
-      ensurePluginsInstalled(secondManager);
+      secondManager.registerModule(BundledPluginInstaller);
       await secondManager.initialize();
       expect(secondManager.getPlugins()).toHaveLength(0);
     });
