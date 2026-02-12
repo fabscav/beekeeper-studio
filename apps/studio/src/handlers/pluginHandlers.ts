@@ -5,7 +5,7 @@ import { PluginTimeoutError } from "@/services/plugin/errors";
 
 interface IPluginHandlers {
   "plugin/plugins": () => Promise<PluginContext[]>
-  "plugin/entries": () => Promise<PluginRegistryEntry[]>
+  "plugin/entries": () => Promise<{ official: PluginRegistryEntry[], community: PluginRegistryEntry[] }>
   "plugin/repository": ({ id }: { id: string }) => Promise<PluginRepository>
   "plugin/install": ({ id }: { id: string }) => Promise<Manifest>
   "plugin/update": ({ id }: { id: string }) => Promise<Manifest>

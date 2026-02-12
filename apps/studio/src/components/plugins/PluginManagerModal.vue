@@ -203,7 +203,8 @@ export default Vue.extend({
       this.loadingPluginReadme = false;
     },
     async buildPluginListData() {
-      const entries = await this.$util.send("plugin/entries");
+      const { official, community } = await this.$util.send("plugin/entries");
+      const entries: PluginRegistryEntry[] = [...official, ...community];
       const installedPlugins: PluginContext[] = await this.$plugin.plugins;
       const list: PluginRegistryEntry[] = [];
 
