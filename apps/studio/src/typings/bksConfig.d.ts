@@ -380,9 +380,7 @@ declare interface IBksConfig {
         };
         layout: {
             mainContentMinWidth: number;
-            primarySidebarMaxWidth: number;
             primarySidebarMinWidth: number;
-            secondarySidebarMaxWidth: number;
             secondarySidebarMinWidth: number;
         };
         queryEditor: {
