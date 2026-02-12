@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import rawLog from "@bksLogger";
 import platformInfo from "@/common/platform_info";
+import globals from "@/common/globals";
 
 const log = rawLog.scope("ensureBundledPluginsInstalled");
 
@@ -14,17 +15,14 @@ const log = rawLog.scope("ensureBundledPluginsInstalled");
  *
  * ```ts
  * const manager = new PluginManager();
- * ensureBundledPluginsInstalled(manager, ["@beekeeperstudio/bks-ai-shell", "@beekeeperstudio/bks-er-diagram"]);
+ * ensurePluginsInstalled(manager);
  * await manager.initialize();
  * ```
  **/
-export default function ensureBundledPluginsInstalled(
-  manager: PluginManager,
-  plugins: string[]
-) {
+export default function ensurePluginsInstalled(manager: PluginManager) {
   manager.registerBeforeInitialize(async () => {
     // Install plugins sequentially to avoid race conditions when saving plugin settings
-    for (const plugin of plugins) {
+    for (const plugin of globals.plugins.ensureInstalled) {
       try {
         await install(manager, plugin);
       } catch (e) {

@@ -16,7 +16,7 @@ import { Manifest } from "@/services/plugin";
 import { UserSetting } from "@/common/appdb/models/user_setting";
 import fs from "fs";
 import path from "path";
-import ensureBundledPluginsInstalled, {
+import ensurePluginsInstalled, {
   resolveBundledPluginPath,
 } from "@commercial/backend/plugin-system/hooks/ensureBundledPluginsInstalled";
 import aiShellManifest from "@beekeeperstudio/bks-ai-shell/manifest.json";
@@ -213,10 +213,7 @@ describe("Basic Plugin Management", () => {
         registry,
         appVersion: AppVer.COMPAT,
       });
-      ensureBundledPluginsInstalled(firstManager, [
-        "@beekeeperstudio/bks-ai-shell",
-        "@beekeeperstudio/bks-er-diagram",
-      ]);
+      ensurePluginsInstalled(firstManager);
       await firstManager.initialize();
 
       // Verify plugins were installed
@@ -233,10 +230,7 @@ describe("Basic Plugin Management", () => {
         registry,
         appVersion: AppVer.COMPAT,
       });
-      ensureBundledPluginsInstalled(secondManager, [
-        "@beekeeperstudio/bks-ai-shell",
-        "@beekeeperstudio/bks-er-diagram",
-      ]);
+      ensurePluginsInstalled(secondManager);
       await secondManager.initialize();
       expect(secondManager.getPlugins()).toHaveLength(0);
     });
