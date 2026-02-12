@@ -14,7 +14,7 @@ import { UserSetting } from "@/common/appdb/models/user_setting";
 import semver from "semver";
 import { NotFoundPluginError, NotFoundPluginViewError, NotSupportedPluginError } from "./errors";
 import { isManifestV0, mapViewsAndMenuFromV0ToV1 } from "./utils";
-import { type Module, type ModuleClass, type ModuleHookMap } from "./Module";
+import { Hookable } from "./Hookable";
 
 const log = rawLog.scope("PluginManager");
 
@@ -24,37 +24,23 @@ export type PluginManagerOptions = {
   appVersion: string;
 }
 
-export default class PluginManager {
+export default class PluginManager extends Hookable {
   private initialized = false;
   private registry: PluginRegistry;
   fileManager: PluginFileManager;
   private plugins: PluginContext[] = [];
   pluginSettings: PluginSettings = {};
   private pluginLocks: string[] = [];
-  private modules: Module[] = [];
 
   /** A Constant for the setting key */
   private static readonly PLUGIN_SETTINGS = "pluginSettings";
 
   constructor(readonly options: PluginManagerOptions) {
+    super();
     this.fileManager = options.fileManager;
     this.registry =
       options.registry ||
       new PluginRegistry(new PluginRepositoryService());
-  }
-
-  registerModule(moduleCls: ModuleClass) {
-    this.modules.push(new moduleCls({ manager: this }));
-  }
-
-  private async runHooks<K extends keyof ModuleHookMap>(name: K) {
-    for (const module of this.modules) {
-      for (const hook of module.hooks) {
-        if (hook.name === name) {
-          await hook.handler();
-        }
-      }
-    }
   }
 
   async initialize() {
@@ -66,7 +52,7 @@ export default class PluginManager {
     // FIXME: Migrate to full ini file configuration
     await this.loadPluginSettings();
 
-    await this.runHooks("before-initialize");
+    await this.callHook("before-initialize");
 
     const installedPlugins = this.fileManager.scanPlugins();
 

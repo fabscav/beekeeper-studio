@@ -1,4 +1,4 @@
-import { PluginManager } from "@/services/plugin";
+import type PluginManager from "./PluginManager";
 
 export interface ModuleHookMap {
   "before-initialize": () => void | Promise<void>;
