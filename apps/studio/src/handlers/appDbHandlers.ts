@@ -69,7 +69,18 @@ function handlersFor<T extends Transport>(name: string, cls: any, transform: (ob
           }));
           return await Promise.all((await cls.save(newEnts, options)).map((e) => transform(e, cls)));
       } else {
-        let dbObj: any = obj.id ? await cls.findOneBy({ id: obj.id }) : new cls().withProps(obj);
+        const repo = cls.getRepository();
+        const alias = "e";
+        const allCols = repo.metadata.columns
+          .map((c: { propertyPath: string }) => `${alias}.${c.propertyPath}`);
+
+        let dbObj = obj.id
+          ? await repo
+              .createQueryBuilder(alias)
+              .select(allCols)
+              .where(`${alias}.id = :id`, { id: obj.id })
+              .getOne()
+          : new cls().withProps(obj);
         if (dbObj && obj.id) {
           cls.merge(dbObj, obj);
         } else if (!dbObj) {
