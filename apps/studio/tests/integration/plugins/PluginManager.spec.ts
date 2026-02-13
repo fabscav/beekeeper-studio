@@ -102,7 +102,7 @@ describe("Basic Plugin Management", () => {
   describe("Discovery", () => {
     it("can list plugin entries", async () => {
       const manager = await initPluginManager(AppVer.COMPAT);
-      const { official, community } = await manager.getEntries();
+      const { official, community } = await manager.registry.getEntries();
       expect(official).toHaveLength(2);
       expect(official[0].id).toBe("test-plugin");
       expect(official[1].id).toBe("frozen-banana");

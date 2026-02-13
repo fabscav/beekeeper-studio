@@ -41,7 +41,7 @@ export default class PluginRegistry {
     if (official) {
       return { origin: "official", entry: official };
     }
-    const community = entries.official.find((e) => e.id === id);
+    const community = entries.community.find((e) => e.id === id);
     if (community) {
       return { origin: "community", entry: community };
     }
