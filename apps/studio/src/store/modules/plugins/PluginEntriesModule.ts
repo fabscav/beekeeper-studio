@@ -10,6 +10,7 @@ export interface PluginEntriesState {
   officialEntries: PluginRegistryEntry[];
   communityEntries: PluginRegistryEntry[];
   loading: boolean;
+  error: string | null;
 }
 
 export const PluginEntriesModule: Module<PluginEntriesState, RootState> = {
@@ -18,6 +19,7 @@ export const PluginEntriesModule: Module<PluginEntriesState, RootState> = {
     officialEntries: [],
     communityEntries: [],
     loading: false,
+    error: null,
   },
   mutations: {
     setOfficialEntries(state, entries: PluginRegistryEntry[]) {
@@ -29,6 +31,9 @@ export const PluginEntriesModule: Module<PluginEntriesState, RootState> = {
     setLoading(state, loading: boolean) {
       state.loading = loading;
     },
+    setError(state, error: string | null) {
+      state.error = error;
+    },
   },
   getters: {
     all(state) {
@@ -38,6 +43,7 @@ export const PluginEntriesModule: Module<PluginEntriesState, RootState> = {
   actions: {
     async load(context) {
       context.commit("setLoading", true);
+      context.commit("setError", null);
       try {
         const { official, community } = await Vue.prototype.$util.send(
           "plugin/entries",
@@ -47,6 +53,7 @@ export const PluginEntriesModule: Module<PluginEntriesState, RootState> = {
         context.commit("setCommunityEntries", community);
       } catch (e) {
         log.error(e);
+        context.commit("setError", e.message ?? String(e));
       }
       context.commit("setLoading", false);
     },
