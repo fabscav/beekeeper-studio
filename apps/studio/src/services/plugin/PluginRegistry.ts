@@ -32,6 +32,22 @@ export default class PluginRegistry {
     };
   }
 
+  async findEntry(id: string): Promise<{
+    origin: PluginOrigin;
+    entry: PluginRegistryEntry;
+  }> {
+    const entries = await this.getEntries();
+    const official = entries.official.find((e) => e.id === id);
+    if (official) {
+      return { origin: "official", entry: official };
+    }
+    const community = entries.official.find((e) => e.id === id);
+    if (community) {
+      return { origin: "community", entry: community };
+    }
+    throw new NotFoundPluginError(`Plugin "${id}" not found in registry.`);
+  }
+
   private async loadOfficialEntries() {
     if (this.officialEntriesCached) {
       return;
@@ -62,16 +78,7 @@ export default class PluginRegistry {
   }
 
   async reloadRepository(pluginId: string): Promise<PluginRepository> {
-    const entries = await this.getEntries();
-    const entry =
-      entries.official.find((entry) => entry.id === pluginId) ||
-      entries.community.find((entry) => entry.id === pluginId);
-
-    if (!entry) {
-      throw new NotFoundPluginError(
-        `Plugin "${pluginId}" not found in registry.`
-      );
-    }
+    const { entry } = await this.findEntry(pluginId);
 
     log.debug(
       `Fetching info for plugin "${pluginId}" (repo: ${entry.repo})...`
