@@ -66,11 +66,16 @@ export default class PluginManager extends Hookable {
     this.initialized = true;
 
     for (const plugin of installedPlugins) {
-      if (
-        this.pluginSettings[plugin.id]?.autoUpdate &&
-        (await this.checkForUpdates(plugin.id))
-      ) {
-        await this.updatePlugin(plugin.id);
+      if (!this.pluginSettings[plugin.id]?.autoUpdate) {
+        continue;
+      }
+
+      try {
+        if (await this.checkForUpdates(plugin.id)) {
+          await this.updatePlugin(plugin.id);
+        }
+      } catch (e) {
+        log.error(`Failed to check for updates for plugin "${plugin.id}"`, e);
       }
     }
   }

@@ -43,21 +43,6 @@ describe("BundledPluginInstaller", () => {
     const setting = await UserSetting.findOneBy({ key: "pluginSettings" });
     setting.userValue = "{}";
     await setting.save();
-    repositoryService.plugins = [
-      {
-        id: "bks-ai-shell",
-        name: "AI Shell",
-        latestRelease: aiShellManifest,
-        readme: "# AI Shell\n\nThis is an AI Shell.",
-      },
-      {
-        id: "bks-er-diagram",
-        name: "ER Diagram",
-        latestRelease: erDiagramManifest,
-        readme: "# ER Diagram\n\nThis is an ER Diagram.",
-      },
-    ];
-    registry.clearCache();
     fileManager = createFileManager();
   });
 
