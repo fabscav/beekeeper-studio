@@ -22,6 +22,7 @@ const log = rawLog.scope("BundledPluginInstaller");
 export default class BundledPluginInstaller extends Module {
   constructor(options: ModuleOptions) {
     super(options);
+
     this.hook("before-initialize", this.installBundledPlugins);
   }
 
@@ -60,18 +61,20 @@ export default class BundledPluginInstaller extends Module {
 
     // Have installed before?
     if (this.manager.pluginSettings[pluginId]) {
-      throw new Error(
-        `Plugin "${pluginId}" was previously installed and cannot be installed again.`
+      log.info(
+        `Plugin "${pluginId}" is already installed, skipping.`
       );
+      return;
     }
 
     const dst = path.join(pluginsDirectory, pluginId);
     if (fs.existsSync(dst)) {
       // This must be set, otherwise the plugin will be copied again
       await this.manager.setPluginAutoUpdateEnabled(pluginId, true);
-      throw new Error(
-        `Plugin "${pluginId}" installation directory already exists on disk.`
+      log.info(
+        `Plugin "${pluginId}" already exists on disk but had no settings, re-registered.`
       );
+      return;
     }
 
     log.info(`Installing plugin ${pluginId}`);
