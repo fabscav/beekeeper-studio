@@ -26,8 +26,8 @@ export type PluginManagerOptions = {
 
 export default class PluginManager extends Hookable {
   private initialized = false;
-  private registry: PluginRegistry;
-  fileManager: PluginFileManager;
+  public readonly registry: PluginRegistry;
+  private fileManager: PluginFileManager;
   private plugins: PluginContext[] = [];
   pluginSettings: PluginSettings = {};
   private pluginLocks: string[] = [];
@@ -78,21 +78,6 @@ export default class PluginManager extends Hookable {
         log.error(`Failed to check for updates for plugin "${plugin.id}"`, e);
       }
     }
-  }
-
-  async getEntries() {
-    this.initializeGuard();
-    return await this.registry.getEntries();
-  }
-
-  async findPluginEntry(id: string): Promise<PluginRegistryEntry> {
-    this.initializeGuard();
-    const entries = await this.getEntries();
-    const entry = entries.find((entry) => entry.id === id);
-    if (!entry) {
-      throw new Error(`Plugin "${id}" not found in registry.`);
-    }
-    return entry;
   }
 
   /**
