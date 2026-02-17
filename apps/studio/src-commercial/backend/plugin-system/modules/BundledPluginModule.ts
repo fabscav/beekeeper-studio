@@ -5,7 +5,7 @@ import platformInfo from "@/common/platform_info";
 import globals from "@/common/globals";
 import { Module, type ModuleOptions } from "@/services/plugin/Module";
 
-const log = rawLog.scope("BundledPluginInstaller");
+const log = rawLog.scope("BundledPluginModule");
 
 /**
  * A plugin system module that copies bundled plugins from node_modules (dev)
@@ -15,11 +15,11 @@ const log = rawLog.scope("BundledPluginInstaller");
  *
  * ```ts
  * const manager = new PluginManager();
- * manager.registerModule(BundledPluginsInstaller);
+ * manager.registerModule(BundledPluginModule);
  * await manager.initialize();
  * ```
  **/
-export default class BundledPluginInstaller extends Module {
+export class BundledPluginModule extends Module {
   constructor(options: ModuleOptions) {
     super(options);
 
@@ -44,7 +44,7 @@ export default class BundledPluginInstaller extends Module {
   private async ensureInstall(pkg: string) {
     log.info(`Resolving ${pkg}`);
 
-    const pluginPath = BundledPluginInstaller.resolve(pkg);
+    const pluginPath = BundledPluginModule.resolve(pkg);
     const pluginsDirectory = this.manager.fileManager.options.pluginsDirectory;
 
     if (!fs.existsSync(pluginsDirectory)) {
@@ -62,7 +62,7 @@ export default class BundledPluginInstaller extends Module {
     // Have installed before?
     if (this.manager.pluginSettings[pluginId]) {
       log.info(
-        `Plugin "${pluginId}" is already installed, skipping.`
+        `Plugin "${pluginId}" is previously installed, skipping.`
       );
       return;
     }
@@ -72,7 +72,7 @@ export default class BundledPluginInstaller extends Module {
       // This must be set, otherwise the plugin will be copied again
       await this.manager.setPluginAutoUpdateEnabled(pluginId, true);
       log.info(
-        `Plugin "${pluginId}" already exists on disk but had no settings, re-registered.`
+        `Plugin "${pluginId}" installation directory already exists on disk.`
       );
       return;
     }
