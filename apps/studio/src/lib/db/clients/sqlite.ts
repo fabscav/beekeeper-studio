@@ -88,11 +88,6 @@ export class SqliteClient extends BasicDatabaseClient<SqliteResult> {
   async connect(): Promise<void> {
     await super.connect();
 
-    // Create the database file if it doesn't exist; if it exists, opening it validates it's a valid SQLite file.
-    if (!this.isTempDB && this.databasePath) {
-      this._createDatabase(this.databasePath);
-    }
-
     // verify that the connection is valid
     await this.driverExecuteSingle('PRAGMA schema_version', { overrideReadonly: true });
 
