@@ -4,6 +4,7 @@ import { spawn, exec, fork } from 'child_process'
 import path from 'path';
 import _ from 'lodash'
 import fs from 'fs'
+import globals from '@/common/globals';
 
 const isWatching = process.argv[2] === 'watch';
 
@@ -30,7 +31,7 @@ const externals = ['better-sqlite3', 'sqlite3',
         'pg-query-stream', 'electron', '@duckdb/node-api',
         '@mongosh/browser-runtime-electron', '@mongosh/service-provider-node-driver',
         'mongodb-client-encryption', 'sqlanywhere', 'ws', 'kerberos',
-        '@beekeeperstudio/bks-ai-shell', '@beekeeperstudio/bks-er-diagram',
+        ...globals.plugins.ensureInstalled,
       ]
 
 let electron = null
