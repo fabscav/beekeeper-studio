@@ -57,14 +57,6 @@
           </x-menu>
         </x-button>
       </span>
-      <a
-        @click.prevent="showUpgradeModal"
-        class="btn btn-brand btn-icon btn-upgrade"
-        v-tooltip="'Upgrade for: backup/restore, import from file, larger query results, and more!'"
-        v-if="$store.getters.isCommunity"
-      >
-        <i class="material-icons">stars</i> Upgrade
-      </a>
     </div>
     <div class="tab-content">
       <div class="empty-editor-group empty flex-col  expand">

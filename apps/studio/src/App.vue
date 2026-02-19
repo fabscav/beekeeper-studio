@@ -68,7 +68,6 @@ import TimeAgo from 'javascript-time-ago'
 import EnterLicenseModal from './components/ultimate/EnterLicenseModal.vue'
 import { AppEvent } from './common/AppEvent'
 import globals from './common/globals'
-import NotificationManager from './components/NotificationManager.vue'
 import Noty from 'noty';
 import ConfirmationModalManager from '@/components/common/modals/ConfirmationModalManager.vue'
 import Dropzone from '@/components/Dropzone.vue'
@@ -91,7 +90,7 @@ export default Vue.extend({
   name: 'App',
   mixins: [assignContextMenuToAllInputs],
   components: {
-    CoreInterface, ConnectionInterface, Titlebar, AutoUpdater, NotificationManager,
+    CoreInterface, ConnectionInterface, Titlebar, AutoUpdater,
     DataManager, UpgradeRequiredModal, ConfirmationModalManager, Dropzone,
     UtilDiedModal, WorkspaceSignInModal, ImportQueriesModal, ImportConnectionsModal,
     EnterLicenseModal, TrialExpiredModal, LicenseExpiredModal,
